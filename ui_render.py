@@ -73,10 +73,19 @@ def _brandmark(d, cx, cy, r=8):
     d.polygon([(cx, cy - r), (cx + r, cy), (cx, cy + r), (cx - r, cy)], fill=RED)
 
 
+def _brand():
+    """Restaurant name from Settings, so the panel matches the outlet."""
+    try:
+        import settings
+        return settings.get("restaurant_name", "Lumina")
+    except Exception:
+        return "Lumina"
+
+
 def _header(d, table, status, listening):
     _brandmark(d, MARGIN + 8, 52)
-    _tracked(d, (MARGIN + 28, 30), "LUMINA", font("serif_bold", 44), BLACK, 3)
-    _tracked(d, (MARGIN + 30, 82), "FINE DINING", font("sans", 12), BLACK, 5)
+    _tracked(d, (MARGIN + 28, 30), _brand().upper(), font("serif_bold", 44), BLACK, 3)
+    _tracked(d, (MARGIN + 30, 82), "PURE VEG  ·  PIZZA & MORE", font("sans", 12), BLACK, 4)
 
     # Right: table (bold) centred against the wordmark, status aligned with the
     # tagline row beneath it.
@@ -188,9 +197,9 @@ def render_order(session, table="07", status="Listening", hint=None, kitchen=Non
             dish, qty = line["dish"], line["qty"]
             qf, nf, pf = font("sans_bold", 24), font("sans", 23), font("sans_bold", 21)
             d.text((MARGIN, y), str(qty), font=qf, fill=RED)
-            name = dish["name"]
+            name = session.line_label(line)
             d.text((MARGIN + 36, y + 1), name, font=nf, fill=BLACK)
-            price = _money(dish["price"] * qty)
+            price = _money(session.line_price(line) * qty)
             name_end = MARGIN + 36 + d.textlength(name, font=nf)
             price_left = price_rail - d.textlength(price, font=pf)
             lx = name_end + 14                      # dotted leader ties name -> price
@@ -264,8 +273,8 @@ def render_payment(session, upi_url, table="07", vpa="", paid=False):
     for line in session.cart[:5]:
         dish, qty = line["dish"], line["qty"]
         d.text((rx, y), f"{qty}", font=font("sans_bold", 19), fill=RED)
-        d.text((rx + 28, y), dish["name"][:24], font=font("sans", 19), fill=BLACK)
-        _right(d, W - MARGIN, y + 1, _money(menu.effective_price(dish) * qty),
+        d.text((rx + 28, y), session.line_label(line)[:24], font=font("sans", 19), fill=BLACK)
+        _right(d, W - MARGIN, y + 1, _money(session.line_price(line) * qty),
                font("sans_bold", 18), BLACK)
         y += 30
     if len(session.cart) > 5:

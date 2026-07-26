@@ -70,8 +70,12 @@ Current order in the cart: {cart}.
 
 Reply ONLY with a compact JSON object with these keys:
 - "intent": one of {INTENTS}
-- "items": for an order, a list of {{"dish": exact menu name, "quantity": int}}.
+- "items": for an order, a list of
+  {{"dish": exact menu name, "quantity": int, "size": <option or "">}}.
   Use this for one OR several dishes in one sentence. Empty list otherwise.
+  Pizzas come in Regular / Medium / Large, burgers in Regular / Veeba Cheese
+  Blend / Amul Cheese Slice / Cheese Ring, momos in Steam / Pan Fry / Deep Fry /
+  Gravy, fries in Medium / Large. Set "size" only if the guest said one.
 - "dish": the EXACT menu dish name involved (for non-order intents), or ""
 - "remove_dish": exact menu dish name to remove (for remove/replace), or ""
 - "category": if the guest asks about a section (starters, mains, breads, rice,
@@ -128,7 +132,10 @@ def _normalize(raw: dict, text: str) -> dict:
                 q = max(1, int(it.get("quantity", 1)))
             except (TypeError, ValueError):
                 q = 1
-            items.append({"dish": d, "quantity": q})
+            # Trust an explicit size, else pick one out of what the guest said.
+            sz = str(it.get("size", "") or "")
+            sz = sz if sz in (d.get("sizes") or {}) else menu.find_size(text, d)
+            items.append({"dish": d, "quantity": q, "size": sz})
 
     # Ground dish names against the real menu (no free-text fallback, so
     # "pepperoni pizza" does NOT collapse to Margherita).

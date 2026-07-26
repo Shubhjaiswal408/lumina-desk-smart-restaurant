@@ -23,15 +23,20 @@ class Session:
         for it in items:
             dish = menu.find_dish(it["name"])
             if dish:
-                s.add_dish(dish, int(it.get("qty", 1)))
+                s.add_dish(dish, int(it.get("qty", 1)), it.get("size"))
         return s
 
-    def add_dish(self, dish: dict, qty: int) -> None:
+    def add_dish(self, dish: dict, qty: int, size=None) -> None:
+        """Add `qty` of a dish. A sized dish (pizza size, burger cheese variant,
+        momo style) keeps each size as its own cart line — they're priced
+        differently, so a Large and a Regular can't share a line."""
+        if size is None:
+            size = menu.default_size(dish)
         for line in self.cart:
-            if line["dish"]["name"] == dish["name"]:
+            if line["dish"]["name"] == dish["name"] and line.get("size") == size:
                 line["qty"] += qty
                 return
-        self.cart.append({"dish": dish, "qty": qty})
+        self.cart.append({"dish": dish, "qty": qty, "size": size})
 
     def clear(self) -> None:
         self.cart = []
@@ -60,9 +65,13 @@ class Session:
     def is_empty(self) -> bool:
         return not self.cart
 
+    def line_price(self, line) -> int:
+        """Unit price for a cart line, in its chosen size."""
+        return menu.price_for(line["dish"], line.get("size"))
+
     def subtotal(self) -> float:
         # Uses live prices so admin menu edits are reflected in the bill.
-        return sum(menu.effective_price(line["dish"]) * line["qty"] for line in self.cart)
+        return sum(self.line_price(l) * l["qty"] for l in self.cart)
 
     def tax(self) -> float:
         """GST on the order. In 'inclusive' mode this is the portion already
@@ -98,8 +107,13 @@ class Session:
         eta = slowest + 1.5 * (portions - 1) + 0.5 * max(0, kitchen_load)
         return int(min(round(eta), slowest * 2 + 20))   # never promise absurd times
 
+    def line_label(self, line) -> str:
+        """'2 Large Margherita' — size first, the way a waiter would say it."""
+        size = line.get("size")
+        return f'{size} {line["dish"]["name"]}' if size else line["dish"]["name"]
+
     def line_summary(self) -> str:
-        parts = [f'{line["qty"]} {line["dish"]["name"]}' for line in self.cart]
+        parts = [f'{line["qty"]} {self.line_label(line)}' for line in self.cart]
         if len(parts) > 1:
             return ", ".join(parts[:-1]) + " and " + parts[-1]
         return parts[0] if parts else ""

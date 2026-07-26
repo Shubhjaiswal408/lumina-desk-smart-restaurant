@@ -157,7 +157,10 @@ def converse(capture, model, session, first_time: bool) -> None:
 
         # Fact-critical intents must speak the exact numbers/allergens. Everything
         # else speaks the LLM's warm, natural reply (falls back to det if absent).
-        FACT = {"check_bill", "split_bill", "pay", "ask_ingredient", "ask_allergen"}
+        # These must speak the real data — prices, allergens, and the actual list
+        # of dishes. Everything else uses the LLM's warmer wording.
+        FACT = {"check_bill", "split_bill", "pay", "ask_ingredient", "ask_allergen",
+                "show_menu", "show_category"}
         use_llm = result["intent"] not in FACT and bool(result.get("reply"))
         reply = result["reply"] if use_llm else det
 

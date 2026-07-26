@@ -40,14 +40,21 @@ def handle(result: dict, session: Session) -> str:
                 return "Sure — which dish would you like me to add?"
             items = [{"dish": dish, "quantity": result.get("quantity", 1)}]
 
-        added, total, unavailable = [], 0, []
+        added, total, unavailable, assumed = [], 0, [], []
         for it in items:
-            if not menu.is_available(it["dish"]):          # 86'd in the admin
-                unavailable.append(it["dish"]["name"])
+            dish = it["dish"]
+            if not menu.is_available(dish):               # 86'd in the admin
+                unavailable.append(dish["name"])
                 continue
-            session.add_dish(it["dish"], it["quantity"])
-            added.append(f"{it['quantity']} {it['dish']['name']}")
-            total += it["quantity"] * menu.effective_price(it["dish"])
+            size = it.get("size") or menu.default_size(dish)
+            # If the dish comes in sizes and the guest didn't pick one, we take
+            # the base size and say so, so they can trade up.
+            if menu.size_names(dish) and not it.get("size"):
+                assumed.append(dish)
+            session.add_dish(dish, it["quantity"], size)
+            label = f"{size} {dish['name']}" if size else dish["name"]
+            added.append(f"{it['quantity']} {label}")
+            total += it["quantity"] * menu.price_for(dish, size)
         if added:
             session.last_dish = items[-1]["dish"]
 
@@ -56,7 +63,11 @@ def handle(result: dict, session: Session) -> str:
         summary = added[0] if len(added) == 1 else ", ".join(added[:-1]) + " and " + added[-1]
         note = ""
         if unavailable:
-            note = f" (Sorry, the {unavailable[0]} is finished today.)"
+            note = f" Sorry, the {unavailable[0]} is finished today."
+        if len(assumed) == 1:
+            others = [s for s in menu.size_names(assumed[0]) if s != menu.default_size(assumed[0])]
+            if others:
+                note += f" That's the {menu.default_size(assumed[0])} — {' or '.join(others)} if you'd prefer."
         return f"I've added {summary} to your order, {total} rupees.{note} Anything else?"
 
     if intent == "remove":
@@ -78,11 +89,14 @@ def handle(result: dict, session: Session) -> str:
         if old:
             session.remove_dish(old)
         if new:
-            session.add_dish(new, result.get("quantity", 1))
+            size = result.get("size") or menu.default_size(new)
+            session.add_dish(new, result.get("quantity", 1), size)
             session.last_dish = new
-            msg = f"My apologies — {new['name']} it is, {new['price']} rupees."
+            price = menu.price_for(new, size)
+            label = f"{size} {new['name']}" if size else new["name"]
+            msg = f"My apologies — {label} it is, {price} rupees."
             if old:
-                msg = f"Sorry about that. I've swapped it for {new['name']}, {new['price']} rupees."
+                msg = f"Sorry about that. I've swapped it for {label}, {price} rupees."
             return msg + " Anything else?"
         return "Certainly — what would you like instead?"
 
@@ -141,11 +155,11 @@ def handle(result: dict, session: Session) -> str:
             session.last_dish = result["dish"]
         if llm_reply:
             return llm_reply
-        session.last_dish = menu.find_dish("paneer butter masala")
-        return (
-            f"Our guests love {', '.join(menu.CHEF_SPECIALS[:3])}. The Paneer Butter Masala "
-            f"with butter naan is a wonderful choice. Shall I add it?"
-        )
+        picks = [p for p in menu.CHEF_SPECIALS if menu.find_dish(p)][:3]
+        session.last_dish = menu.find_dish(picks[0]) if picks else None
+        return (f"Our guests love {', '.join(picks)}. "
+                f"The {picks[0]} is always a good shout. Shall I add it?"
+                if picks else "What sort of thing are you in the mood for?")
 
     if intent == "clear_cart":
         if session.is_empty():
@@ -158,18 +172,21 @@ def handle(result: dict, session: Session) -> str:
         if not cat:
             return "Which section — starters, mains, breads, rice, desserts, or drinks?"
         dishes = menu.by_category(cat)
-        names = ", ".join(f"{d['name']} at {d['price']}" for d in dishes)
+        def _q(d):
+            base = menu.price_for(d, menu.default_size(d))
+            return f"{d['name']} from {base}" if menu.size_names(d) else f"{d['name']} at {base}"
+        names = ", ".join(_q(d) for d in dishes[:8])
+        more = f" and {len(dishes) - 8} more" if len(dishes) > 8 else ""
         label = {"Starter": "starters", "Main": "mains", "Bread": "breads",
                  "Rice": "rice dishes", "Dessert": "desserts", "Beverage": "drinks"}.get(cat, cat.lower())
-        return f"In {label} we have {names} rupees. Shall I add any of those?"
+        return f"In {label} we have {names} rupees{more}. Shall I add any of those?"
 
     if intent == "show_menu":
-        starters = ", ".join(d["name"] for d in menu.by_category("Starter")[:2])
-        mains = ", ".join(d["name"] for d in menu.by_category("Main")[:3])
+        pizzas = ", ".join(d["name"] for d in menu.by_category("Pizza")[:3])
         return (
-            f"Certainly. We've a lovely spread — starters like {starters}, mains such as {mains}, "
-            f"plus fresh breads, rice, desserts and drinks. "
-            f"Would you like me to run through a section, or suggest something?"
+            f"We're all pure veg. Pizzas from ninety rupees — {pizzas} and many more — "
+            f"plus stuffed garlic breads, burgers, momos, calizza, fries, shakes and mocktails. "
+            f"Which section shall I run through?"
         )
 
     if intent == "call_staff":
