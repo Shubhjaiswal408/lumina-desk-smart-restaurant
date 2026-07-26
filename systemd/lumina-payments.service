@@ -1,0 +1,15 @@
+[Unit]
+Description=Lumina Desk — Payment watcher (FamApp email -> bill settled)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=techiesms
+WorkingDirectory=/home/techiesms/lumina-desk
+ExecStart=/home/techiesms/lumina-desk/venv/bin/python -u payment_watcher.py
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

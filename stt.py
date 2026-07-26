@@ -1,0 +1,147 @@
+"""Speech-to-text for the guest's command.
+
+record_utterance() captures one spoken command from the background AudioCapture
+using simple energy-based voice-activity detection (records from the first word
+until the guest goes quiet). transcribe() sends that audio to Groq's Whisper
+(fast + accurate) and falls back to offline Vosk if the cloud is unreachable.
+"""
+import io
+import json
+import wave
+
+import numpy as np
+import requests
+
+import config
+import menu
+import settings
+
+# Bias Whisper toward the real menu so dish names transcribe correctly
+# ("paneer tikka" instead of "an intika"). Works across languages (proper nouns).
+def _stt_prompt() -> str:
+    """Rebuilt each call so newly added dishes are transcribed correctly too."""
+    return "Indian restaurant order. Menu: " + ", ".join(
+        d["name"] for d in menu.all_dishes()) + "."
+
+
+# ---------- recording (VAD) ----------
+
+def _rms(frame: np.ndarray) -> float:
+    if frame.size == 0:
+        return 0.0
+    return float(np.sqrt(np.mean(frame.astype(np.float32) ** 2)))
+
+
+def record_utterance(capture) -> np.ndarray | None:
+    """Record one command. Returns int16 mono @16k, or None if nothing spoken."""
+    frame_sec = 0.1
+    silence_needed = int(config.VAD_SILENCE_SEC / frame_sec)
+    start_timeout = int(config.VAD_START_TIMEOUT_SEC / frame_sec)
+    max_frames = int(config.VAD_MAX_SEC / frame_sec)
+
+    # Calibrate the noise floor from the first few frames of "room".
+    noise = []
+    for _ in range(3):
+        try:
+            noise.append(_rms(capture.read(timeout=1.0)))
+        except Exception:
+            break
+    noise_floor = max(noise) if noise else 0.0
+    threshold = max(config.VAD_RMS_THRESHOLD, noise_floor * 2.5)
+
+    preroll = []          # keep last ~0.3 s so we don't clip the first word
+    voiced = []
+    started = False
+    silence_run = 0
+    waited = 0
+
+    while True:
+        try:
+            frame = capture.read(timeout=1.0)
+        except Exception:
+            break
+
+        loud = _rms(frame) >= threshold
+
+        if not started:
+            preroll.append(frame)
+            if len(preroll) > 3:
+                preroll.pop(0)
+            if loud:
+                started = True
+                voiced.extend(preroll)
+                voiced.append(frame)
+            else:
+                waited += 1
+                if waited >= start_timeout:
+                    return None  # nobody spoke
+        else:
+            voiced.append(frame)
+            silence_run = silence_run + 1 if not loud else 0
+            if silence_run >= silence_needed or len(voiced) >= max_frames:
+                break
+
+    if not voiced:
+        return None
+    audio = np.concatenate(voiced).astype(np.int16)
+    # Reject clips that aren't clearly speech (too quiet or too short) so we
+    # never send noise to Whisper (which would hallucinate random words).
+    if len(audio) < int(0.4 * config.SAMPLE_RATE) or _rms(audio) < config.VAD_MIN_SPEECH_RMS:
+        return None
+    return audio
+
+
+# ---------- transcription ----------
+
+def _pcm_to_wav(pcm: np.ndarray) -> bytes:
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(config.SAMPLE_RATE)
+        w.writeframes(pcm.tobytes())
+    return buf.getvalue()
+
+
+def _groq_transcribe(pcm: np.ndarray, key: str) -> tuple[str, str]:
+    """Returns (text, detected_language). No language pin -> Whisper auto-detects
+    across ~99 languages; verbose_json gives us the detected language back."""
+    wav = _pcm_to_wav(pcm)
+    resp = requests.post(
+        config.GROQ_STT_URL,
+        headers={"Authorization": f"Bearer {key}"},
+        files={"file": ("command.wav", wav, "audio/wav")},
+        data={"model": config.GROQ_STT_MODEL, "response_format": "verbose_json",
+              "temperature": "0", "prompt": _stt_prompt()},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    j = resp.json()
+    return j.get("text", "").strip(), (j.get("language", "english") or "english")
+
+
+def _vosk_transcribe(pcm: np.ndarray, vosk_model) -> str:
+    from vosk import KaldiRecognizer
+    rec = KaldiRecognizer(vosk_model, config.SAMPLE_RATE)
+    rec.AcceptWaveform(pcm.tobytes())
+    return json.loads(rec.FinalResult()).get("text", "").strip()
+
+
+def transcribe(pcm: np.ndarray, vosk_model=None) -> tuple[str, str, str]:
+    """Return (text, engine_used, language).
+
+    Online/auto: Groq Whisper (accurate, multilingual), Vosk as the safety net.
+    Offline mode: Vosk only — no network call is even attempted.
+    """
+    if pcm is None or pcm.size == 0:
+        return "", "none", "english"
+    key = settings.groq_key()
+    if key:
+        try:
+            text, lang = _groq_transcribe(pcm, key)
+            return text, "groq", lang
+        except Exception as e:
+            print(f"  (Groq STT failed, using offline Vosk: {e})", flush=True)
+    if vosk_model is not None:
+        return _vosk_transcribe(pcm, vosk_model), "vosk", "english"
+    return "", "none", "english"

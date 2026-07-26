@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lumina Kitchen</title>
+<style>
+  :root{
+    --bg:#0e1116; --panel:#161b22; --panel2:#1c2430; --line:#2a3441;
+    --ink:#e8edf3; --dim:#8b98a8; --red:#ff4d4d; --amber:#ffb020;
+    --green:#35d07f; --blue:#4aa8ff; --accent:#ff4d4d;
+    --shadow:0 8px 26px rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:radial-gradient(1200px 600px at 80% -10%, #17202b, var(--bg));
+    color:var(--ink);font-family:'Segoe UI',system-ui,-apple-system,sans-serif;}
+  /* Header */
+  header{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:18px;
+    padding:14px 22px;background:rgba(14,17,22,.9);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line);}
+  .brand{display:flex;align-items:center;gap:12px;font-weight:800;letter-spacing:2px;font-size:20px}
+  .diamond{width:14px;height:14px;background:var(--accent);transform:rotate(45deg);border-radius:2px}
+  .brand small{font-weight:600;letter-spacing:3px;color:var(--dim);font-size:11px;display:block;margin-top:2px}
+  .spacer{flex:1}
+  .stat{display:flex;flex-direction:column;align-items:center;padding:0 14px;border-left:1px solid var(--line)}
+  .stat b{font-size:22px;line-height:1} .stat span{font-size:10px;color:var(--dim);letter-spacing:1px;text-transform:uppercase}
+  .clock{font-variant-numeric:tabular-nums;font-size:20px;font-weight:700}
+  select{background:var(--panel2);color:var(--ink);border:1px solid var(--line);
+    border-radius:8px;padding:7px 10px;font-size:13px}
+  .conn{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dim)}
+  .dot{width:9px;height:9px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green)}
+  .dot.off{background:var(--red);box-shadow:0 0 8px var(--red)}
+  /* Alerts */
+  #alerts{padding:0 22px}
+  .alert{display:flex;align-items:center;gap:12px;margin-top:12px;padding:12px 16px;border-radius:12px;
+    font-weight:600;animation:pulse 1.6s infinite}
+  .alert.staff{background:rgba(74,168,255,.14);border:1px solid var(--blue);color:#bfe0ff}
+  .alert.pay{background:rgba(255,176,32,.14);border:1px solid var(--amber);color:#ffe0a3}
+  .alert button{margin-left:auto}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.72}}
+  /* Board */
+  main{padding:18px 22px 60px;display:grid;gap:18px;
+    grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
+  .empty{grid-column:1/-1;text-align:center;color:var(--dim);padding:14vh 0;font-size:18px}
+  .empty .big{font-size:44px;margin-bottom:10px}
+  .card{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);
+    border-radius:16px;box-shadow:var(--shadow);overflow:hidden;display:flex;flex-direction:column;
+    animation:rise .25s ease}
+  @keyframes rise{from{transform:translateY(8px);opacity:0}to{transform:none;opacity:1}}
+  .card.fresh{animation:flash 1.1s ease}
+  @keyframes flash{0%{box-shadow:0 0 0 3px var(--accent)}100%{box-shadow:var(--shadow)}}
+  .chead{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line)}
+  .tno{font-size:26px;font-weight:800;letter-spacing:1px}
+  .tno small{font-size:11px;color:var(--dim);letter-spacing:2px;display:block}
+  .timer{margin-left:auto;font-variant-numeric:tabular-nums;font-weight:700;font-size:15px;
+    padding:4px 10px;border-radius:20px;background:#26313f;color:var(--green)}
+  .timer.warn{color:var(--amber);background:rgba(255,176,32,.12)}
+  .timer.late{color:#fff;background:var(--red);animation:pulse 1.2s infinite}
+  ul.items{list-style:none;margin:0;padding:8px 8px 4px;flex:1}
+  li.item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:10px;cursor:pointer;
+    transition:background .15s}
+  li.item:hover{background:#20293490}
+  li.item.new{background:rgba(255,77,77,.08)}
+  .veg{width:12px;height:12px;border:2px solid var(--green);border-radius:3px;flex:none;position:relative}
+  .veg::after{content:'';position:absolute;inset:2px;background:var(--green);border-radius:50%}
+  .veg.non{border-color:#e0684a}.veg.non::after{background:#e0684a}
+  .qty{font-weight:800;color:var(--accent);min-width:26px}
+  .nm{font-weight:600;flex:1}
+  .alg{font-size:10px;color:var(--red);background:rgba(255,77,77,.1);padding:2px 7px;border-radius:20px;white-space:nowrap}
+  .pill{font-size:10px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;padding:3px 9px;border-radius:20px}
+  .s-new{background:#33404f;color:#cdd7e2}
+  .s-preparing{background:rgba(255,176,32,.16);color:var(--amber)}
+  .s-ready{background:rgba(53,208,127,.16);color:var(--green)}
+  .s-served{background:#263043;color:var(--dim)}
+  .cfoot{display:flex;gap:8px;padding:12px}
+  button{cursor:pointer;border:none;border-radius:10px;padding:10px 12px;font-weight:700;font-size:13px;
+    background:#26313f;color:var(--ink);transition:transform .06s,filter .15s}
+  button:hover{filter:brightness(1.15)} button:active{transform:scale(.97)}
+  button.prim{background:var(--green);color:#062616;flex:1}
+  button.warn{background:var(--amber);color:#3a2600;flex:1}
+  button.ghost{background:#232d3a;color:var(--dim)}
+  .tot{margin-left:auto;font-weight:800;color:var(--ink)}
+  .badge{font-size:10px;background:var(--accent);color:#fff;padding:2px 7px;border-radius:20px;font-weight:800}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand"><div class="diamond"></div>
+    <div>LUMINA<small id="t-kitchen">KITCHEN</small></div></div>
+  <div class="spacer"></div>
+  <div class="stat"><b id="c-orders">0</b><span id="t-orders">Orders</span></div>
+  <div class="stat"><b id="c-items">0</b><span id="t-items">Items</span></div>
+  <div class="clock" id="clock">--:--</div>
+  <select id="lang" title="Language">
+    <option value="en">English</option><option value="hi">हिन्दी</option>
+    <option value="es">Español</option><option value="ta">தமிழ்</option>
+    <option value="bn">বাংলা</option><option value="fr">Français</option>
+  </select>
+  <div class="conn"><div class="dot" id="conn-dot"></div><span id="conn-txt">Live</span></div>
+</header>
+<div id="alerts"></div>
+<main id="board"></main>
+
+<script>
+const T = {
+  en:{kitchen:"KITCHEN",orders:"Orders",items:"Items",live:"Live",offline:"Offline",
+    table:"TABLE",waiting:"waiting",start:"Start all",ready:"All ready",bump:"Served ✓",
+    newq:"NEW",staff:"Staff needed at Table",pay:"Payment requested — Table",ack:"Got it",
+    empty:"All caught up",emptysub:"No active orders",contains:"contains",
+    st:{new:"New",preparing:"Preparing",ready:"Ready",served:"Served"}},
+  hi:{kitchen:"रसोई",orders:"ऑर्डर",items:"आइटम",live:"लाइव",offline:"ऑफ़लाइन",
+    table:"टेबल",waiting:"प्रतीक्षा",start:"सभी शुरू",ready:"सभी तैयार",bump:"परोसा ✓",
+    newq:"नया",staff:"स्टाफ़ चाहिए — टेबल",pay:"भुगतान अनुरोध — टेबल",ack:"ठीक है",
+    empty:"सब पूरा",emptysub:"कोई सक्रिय ऑर्डर नहीं",contains:"शामिल",
+    st:{new:"नया",preparing:"बन रहा",ready:"तैयार",served:"परोसा"}},
+  es:{kitchen:"COCINA",orders:"Pedidos",items:"Platos",live:"En vivo",offline:"Sin conexión",
+    table:"MESA",waiting:"esperando",start:"Empezar",ready:"Listo",bump:"Servido ✓",
+    newq:"NUEVO",staff:"Personal — Mesa",pay:"Pago solicitado — Mesa",ack:"Ok",
+    empty:"Todo al día",emptysub:"Sin pedidos activos",contains:"contiene",
+    st:{new:"Nuevo",preparing:"Preparando",ready:"Listo",served:"Servido"}},
+  ta:{kitchen:"சமையலறை",orders:"ஆர்டர்கள்",items:"உணவுகள்",live:"நேரலை",offline:"ஆஃப்லைன்",
+    table:"மேசை",waiting:"காத்திருப்பு",start:"தொடங்கு",ready:"தயார்",bump:"பரிமாறியது ✓",
+    newq:"புதிது",staff:"பணியாளர் — மேசை",pay:"கட்டணம் — மேசை",ack:"சரி",
+    empty:"அனைத்தும் முடிந்தது",emptysub:"செயலில் ஆர்டர்கள் இல்லை",contains:"உள்ளடக்கம்",
+    st:{new:"புதிது",preparing:"தயாராகிறது",ready:"தயார்",served:"பரிமாறியது"}},
+  bn:{kitchen:"রান্নাঘর",orders:"অর্ডার",items:"আইটেম",live:"লাইভ",offline:"অফলাইন",
+    table:"টেবিল",waiting:"অপেক্ষা",start:"সব শুরু",ready:"সব প্রস্তুত",bump:"পরিবেশিত ✓",
+    newq:"নতুন",staff:"স্টাফ প্রয়োজন — টেবিল",pay:"পেমেন্ট অনুরোধ — টেবিল",ack:"ঠিক আছে",
+    empty:"সব শেষ",emptysub:"কোনো সক্রিয় অর্ডার নেই",contains:"রয়েছে",
+    st:{new:"নতুন",preparing:"তৈরি হচ্ছে",ready:"প্রস্তুত",served:"পরিবেশিত"}},
+  fr:{kitchen:"CUISINE",orders:"Commandes",items:"Plats",live:"En direct",offline:"Hors ligne",
+    table:"TABLE",waiting:"attente",start:"Tout démarrer",ready:"Tout prêt",bump:"Servi ✓",
+    newq:"NOUVEAU",staff:"Personnel — Table",pay:"Paiement demandé — Table",ack:"Ok",
+    empty:"Tout est à jour",emptysub:"Aucune commande active",contains:"contient",
+    st:{new:"Nouveau",preparing:"En cours",ready:"Prêt",served:"Servi"}},
+};
+// Inline SVG icons (emoji don't render on the Pi's browser)
+const IC = {
+  bell:'<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" style="vertical-align:-4px"><path d="M12 22a2.5 2.5 0 002.45-2h-4.9A2.5 2.5 0 0012 22zm7-6v-5a7 7 0 00-5-6.7V4a2 2 0 10-4 0v.3A7 7 0 005 11v5l-2 2v1h18v-1l-2-2z"/></svg>',
+  card:'<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" style="vertical-align:-4px"><path d="M20 4H4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V6a2 2 0 00-2-2zm0 14H4v-6h16v6zm0-10H4V6h16v2z"/></svg>',
+  warn:'<svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor" style="vertical-align:-1px"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>',
+  plate:'<svg viewBox="0 0 24 24" width="52" height="52" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/></svg>',
+};
+let lang = localStorage.getItem("kds_lang") || "en";
+let state = {orders:[]};
+const seen = new Set();     // tables we've already shown (for new-order sound)
+
+const $ = s => document.querySelector(s);
+document.getElementById("lang").value = lang;
+document.getElementById("lang").onchange = e => {
+  lang = e.target.value; localStorage.setItem("kds_lang", lang); render();
+};
+
+function tr(){ return T[lang] || T.en; }
+
+// clock
+setInterval(()=>{ const d=new Date();
+  $("#clock").textContent = d.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}); },1000);
+
+// new-order chime
+function chime(){ try{
+  const a=new (window.AudioContext||window.webkitAudioContext)();
+  [880,1320].forEach((f,i)=>{const o=a.createOscillator(),g=a.createGain();
+    o.frequency.value=f;o.connect(g);g.connect(a.destination);
+    g.gain.setValueAtTime(.0001,a.currentTime+i*.16);
+    g.gain.exponentialRampToValueAtTime(.25,a.currentTime+i*.16+.02);
+    g.gain.exponentialRampToValueAtTime(.0001,a.currentTime+i*.16+.3);
+    o.start(a.currentTime+i*.16);o.stop(a.currentTime+i*.16+.32);});
+}catch(e){}}
+
+async function post(url){ try{ await fetch(url,{method:"POST"}); }catch(e){} }
+
+function elapsed(sec){ const m=Math.floor(sec/60); return m<1?"<1m":m+"m"; }
+
+function render(){
+  const t=tr();
+  // header labels + counts
+  $("#t-kitchen").textContent=t.kitchen; $("#t-orders").textContent=t.orders;
+  $("#t-items").textContent=t.items;
+  const orders=[...state.orders].sort((a,b)=>a.created-b.created);
+  $("#c-orders").textContent=orders.length;
+  $("#c-items").textContent=orders.reduce((n,o)=>n+o.items.reduce((k,i)=>k+i.qty,0),0);
+  // alerts
+  const al=$("#alerts"); al.innerHTML="";
+  orders.forEach(o=>{
+    if(o.staff_called) al.insertAdjacentHTML("beforeend",
+      `<div class="alert staff">${IC.bell} ${t.staff} ${o.table}<button onclick="post('/api/table/${o.table}/ack_alert/staff')">${t.ack}</button></div>`);
+    if(o.pay_requested) al.insertAdjacentHTML("beforeend",
+      `<div class="alert pay">${IC.card} ${t.pay} ${o.table} — ₹${Math.round(o.total)}<button onclick="post('/api/table/${o.table}/ack_alert/pay')">${t.ack}</button></div>`);
+  });
+  // board
+  const b=$("#board");
+  if(!orders.length){ b.innerHTML=
+    `<div class="empty"><div class="big">🍽️</div>${t.empty}<br><span style="font-size:14px">${t.emptysub}</span></div>`;
+    return; }
+  b.innerHTML = orders.map(o=>{
+    const wait=(state.now-o.created);
+    const cls = wait>600?"late":wait>300?"warn":"";
+    const fresh = o.items.some(i=>i.is_new);
+    const items = o.items.map(i=>{
+      const alg = i.allergens.length? `<span class="alg">⚠ ${i.allergens.join(", ")}</span>`:"";
+      const nb = i.is_new? `<span class="badge">${t.newq}</span>`:"";
+      return `<li class="item ${i.is_new?'new':''}" onclick="post('/api/table/${o.table}/item/${encodeURIComponent(i.name)}/advance')">
+        <span class="veg ${i.veg?'':'non'}"></span>
+        <span class="qty">${i.qty}×</span>
+        <span class="nm">${i.name} ${nb}</span> ${alg}
+        <span class="pill s-${i.status}">${t.st[i.status]||i.status}</span></li>`;
+    }).join("");
+    return `<div class="card ${fresh?'fresh':''}">
+      <div class="chead"><div class="tno">${t.table} ${o.table}<small>${t.waiting} ${elapsed(wait)}</small></div>
+        <div class="timer ${cls}">${elapsed(wait)}</div></div>
+      <ul class="items">${items}</ul>
+      <div class="cfoot">
+        <button class="warn" onclick="post('/api/table/${o.table}/all/preparing')">${t.start}</button>
+        <button class="prim" onclick="post('/api/table/${o.table}/all/ready')">${t.ready}</button>
+        <button class="ghost" onclick="post('/api/table/${o.table}/bump')">${t.bump}</button>
+        <span class="tot">₹${Math.round(o.total)}</span>
+      </div></div>`;
+  }).join("");
+}
+
+// live timers refresh (recompute "waiting" every 5s without a server push)
+setInterval(()=>{ if(state.orders.length){ state.now+=5; render(); } },5000);
+
+// WebSocket
+function connect(){
+  const ws=new WebSocket(`ws://${location.host}/ws`);
+  ws.onopen=()=>{ $("#conn-dot").classList.remove("off"); $("#conn-txt").textContent=tr().live; };
+  ws.onclose=()=>{ $("#conn-dot").classList.add("off"); $("#conn-txt").textContent=tr().offline;
+    setTimeout(connect,1500); };
+  ws.onmessage=e=>{ const m=JSON.parse(e.data);
+    if(m.type==="state"){
+      const tables=new Set(m.orders.map(o=>o.table));
+      // chime when a brand-new table appears or a new item shows
+      const isNew = m.orders.some(o=>!seen.has(o.table) || o.items.some(i=>i.is_new));
+      m.orders.forEach(o=>seen.add(o.table));
+      [...seen].forEach(x=>{ if(!tables.has(x)) seen.delete(x); });
+      state=m; render(); if(isNew) chime();
+    }};
+}
+connect(); render();
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+[Unit]
+Description=Lumina Desk — Voice Assistant (wake word, ordering)
+After=network-online.target mosquitto.service sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=techiesms
+SupplementaryGroups=audio
+WorkingDirectory=/home/techiesms/lumina-desk
+ExecStart=/home/techiesms/lumina-desk/venv/bin/python wake_listen.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

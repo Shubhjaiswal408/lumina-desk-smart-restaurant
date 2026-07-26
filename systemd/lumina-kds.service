@@ -1,0 +1,15 @@
+[Unit]
+Description=Lumina Desk — Kitchen Display Server (web dashboard)
+After=network-online.target mosquitto.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=techiesms
+WorkingDirectory=/home/techiesms/lumina-desk
+ExecStart=/home/techiesms/lumina-desk/venv/bin/uvicorn kds_server:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

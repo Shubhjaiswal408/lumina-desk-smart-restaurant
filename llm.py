@@ -1,0 +1,323 @@
+"""LLM understanding for Lumina — now the PRIMARY brain.
+
+The model sees the conversation history, the current cart, and the real menu,
+so it handles natural speech, corrections ("no, I said pepperoni"), negation
+("I never asked for a pizza"), pronouns ("add it"), and off-menu requests
+(pepperoni pizza isn't on the menu -> it says so instead of forcing a match).
+
+Backends, fastest first: Groq cloud (llama-3.1-8b-instant, ~0.3 s) when online,
+local LFM2 via Ollama (~6 s) offline. Rules (intents.py) are the last resort if
+no LLM is reachable at all.
+
+Contract that never changes: the LLM classifies + phrases, but it NEVER decides
+prices, bill totals, or allergen facts. Those come from menu.py / session.py via
+dialog.py. We ground every dish name the model returns against the real menu.
+"""
+import json
+import re
+
+import requests
+
+import config
+import menu
+import settings
+
+OLLAMA_URL = "http://localhost:11434/api/chat"
+LOCAL_MODEL = "hf.co/LiquidAI/LFM2-700M-GGUF"
+
+INTENTS = [
+    "order", "remove", "replace", "clear_cart", "check_bill", "split_bill",
+    "ask_ingredient", "ask_allergen", "recommend", "show_menu", "show_category",
+    "request_item", "call_staff", "pay", "unavailable", "smalltalk", "end",
+]
+
+_SERVICE_NAMES = ", ".join(menu.SERVICE_ITEMS)
+_CATEGORIES = ", ".join(menu.CATEGORIES)
+
+
+def _menu_names() -> str:
+    """Built fresh each call so dishes added in the admin are instantly known."""
+    return ", ".join(d["name"] for d in menu.all_dishes())
+
+
+def _system_prompt(session) -> str:
+    if session.cart:
+        cart = "; ".join(f'{l["qty"]}x {l["dish"]["name"]}' for l in session.cart)
+    else:
+        cart = "(empty)"
+    return f"""You are Lumina, the head waiter at a fine Indian restaurant —
+gracious, warm, and quietly expert, the kind of server guests remember. You read
+the guest, anticipate needs, and make the meal feel effortless.
+
+Voice & style for "reply":
+- Sound like a real person speaking, never a template or a robot. Vary your
+  wording; don't repeat the same phrase twice in a row.
+- Warm but concise — usually ONE natural sentence. This is spoken aloud, so no
+  lists, no markdown, no emoji.
+- Be proactive and helpful: suggest a pairing, a chef's favourite, or a next step
+  when it fits — but briefly, never pushy.
+- After a dish is added, you MAY offer ONE natural pairing from the menu
+  ("Garlic Naan goes beautifully with that") — only if it genuinely complements
+  the dish, only once per dish, and never if the guest sounds like they're done.
+- Acknowledge what they said before answering ("Lovely choice —", "Of course,").
+- If you didn't understand, ask a short, friendly clarifying question rather than
+  guessing.
+
+MENU (these are the ONLY dishes that exist): {_menu_names()}.
+Menu categories: {_CATEGORIES}.
+Service items (non-food): {_SERVICE_NAMES}.
+Current order in the cart: {cart}.
+
+Reply ONLY with a compact JSON object with these keys:
+- "intent": one of {INTENTS}
+- "items": for an order, a list of {{"dish": exact menu name, "quantity": int}}.
+  Use this for one OR several dishes in one sentence. Empty list otherwise.
+- "dish": the EXACT menu dish name involved (for non-order intents), or ""
+- "remove_dish": exact menu dish name to remove (for remove/replace), or ""
+- "category": if the guest asks about a section (starters, mains, breads, rice,
+  desserts, beverages/drinks), the category name; else ""
+- "item": service item name (for a service request), or ""
+- "quantity": integer, default 1
+- "ways": integer for splitting the bill, else 0
+- "reply": one short, hospitable sentence to say to the guest
+
+CRITICAL RULES — follow exactly:
+- NEVER invent, assume, or suggest-into-the-cart a dish. Only put a dish in
+  "items"/"remove_dish" if the guest EXPLICITLY named it in their message (or
+  clearly referred to one just discussed, e.g. "add it").
+- If the guest wants to order but names NO dish (e.g. "I'd like to order",
+  "what do you have"), use intent "show_menu" with items = [] and ask what they'd
+  like. Do NOT add anything.
+- Only use "remove"/"replace" when the guest clearly asks to remove/change a
+  SPECIFIC item. Vague or filler input ("I'm sorry", "um", "wait", "hmm",
+  "never mind") → intent "smalltalk", NO cart change, a gentle reply.
+- Something not on the menu (e.g. "pepperoni pizza") → intent "unavailable";
+  say we don't have it and suggest the closest real dish. Never substitute.
+- "clear my order / cancel everything / start over / empty the cart" → intent
+  "clear_cart".
+- Asking for a NON-FOOD item (water, napkin, tissue, spoon, fork, knife, plate,
+  glass, menu card) → intent "request_item" with "item" set. Staff are alerted.
+- Asking for a person / complaint / "call the waiter" → intent "call_staff".
+- Asking about a section ("what's in starters?", "show me the desserts", "what
+  drinks do you have?") → intent "show_category" with "category" set. The system
+  lists the dishes, so keep your "reply" a brief lead-in.
+- Never state prices, totals, or allergen facts yourself — the system adds those.
+- Keep "reply" under 25 words, calm and gracious.
+- The guest may speak ANY language (Hindi, Spanish, Tamil, etc.). Understand it,
+  and write "reply" in that SAME language. But "dish"/"items"/"remove_dish" must
+  ALWAYS be the EXACT English menu names — map translated or transliterated dish
+  names to the menu (e.g. "बटर नान" / "butter naan" -> "Butter Naan").
+
+Examples:
+- "I'd like to place an order" -> {{"intent":"show_menu","items":[],"reply":"Of course — what would you like? I can suggest something if you'd like."}}
+- "add two butter naan" -> {{"intent":"order","items":[{{"dish":"Butter Naan","quantity":2}}]}}
+- "I'm sorry" -> {{"intent":"smalltalk","items":[],"reply":"No need to apologise! What can I get you?"}}
+- "actually remove the biryani" -> {{"intent":"remove","remove_dish":"Chicken Biryani"}}"""
+
+
+def _normalize(raw: dict, text: str) -> dict:
+    intent = str(raw.get("intent", "smalltalk")).strip()
+    if intent not in INTENTS:
+        intent = "smalltalk"
+    # Multi-item orders: ground each dish; drop any not on the menu.
+    items = []
+    for it in raw.get("items", []) or []:
+        d = menu.find_dish(str(it.get("dish", "") or ""))
+        if d:
+            try:
+                q = max(1, int(it.get("quantity", 1)))
+            except (TypeError, ValueError):
+                q = 1
+            items.append({"dish": d, "quantity": q})
+
+    # Ground dish names against the real menu (no free-text fallback, so
+    # "pepperoni pizza" does NOT collapse to Margherita).
+    dish = menu.find_dish(str(raw.get("dish", "") or ""))
+    remove_dish = menu.find_dish(str(raw.get("remove_dish", "") or ""))
+    category = menu.find_category(str(raw.get("category", "") or "")) or menu.find_category(text)
+    item = str(raw.get("item", "") or "") or menu.find_service_item(text)
+    try:
+        qty = max(1, int(raw.get("quantity", 1)))
+    except (TypeError, ValueError):
+        qty = 1
+    try:
+        ways = int(raw.get("ways", 0))
+    except (TypeError, ValueError):
+        ways = 0
+
+    # SAFETY: questions about what's in a dish MUST be answered from menu data,
+    # never improvised by the model. If the guest asks an ingredient/allergen
+    # question about a known dish, force the grounded intent.
+    _ING_Q = r"(what'?s in|whats in|what is in|ingredient|made of|made with|contain|" \
+             r"does it have|is there any|allerg|gluten|dairy|lactose|nuts?|peanut|soy|egg)"
+    if re.search(_ING_Q, (text or "").lower()):
+        d = dish or menu.find_dish(text or "")
+        if d:
+            allergy = re.search(r"(allerg|gluten|dairy|lactose|nuts?|peanut|soy|egg)",
+                                (text or "").lower())
+            intent = "ask_allergen" if allergy else "ask_ingredient"
+            dish = d
+
+    # Anti-hallucination guard: never add/remove a dish the guest didn't name.
+    # Only for Latin-script input — for other scripts (Hindi, etc.) the English
+    # menu name can't literally appear, so we trust the LLM's extraction there.
+    low = (text or "").lower()
+    # Did the guest actually say a number? ("remove one naan" vs "remove the naan")
+    qty_explicit = bool(re.search(
+        r"\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|a|an|single)\b", low))
+    ascii_ratio = sum(1 for c in text if ord(c) < 128) / max(1, len(text))
+    guard_on = ascii_ratio > 0.7
+    has_ref = bool(re.search(r"\b(it|that|this|them|those|these|same|again|usual|one|ones)\b", low))
+
+    def _named(d):
+        return d is not None and (
+            menu._alias_matches(low, d["name"].lower())
+            or any(menu._alias_matches(low, a) for a in d["aliases"]))
+
+    if guard_on and intent == "order" and not has_ref:
+        items = [x for x in items if _named(x["dish"])]
+        if not _named(dish):
+            dish = None
+        if not items and not dish:
+            intent = "show_menu"   # wanted to order but named nothing -> ask
+    if guard_on and intent in ("remove", "replace") and not has_ref:
+        if not _named(remove_dish):
+            remove_dish = None
+        if intent == "remove" and remove_dish is None:
+            intent = "smalltalk"   # vague input -> don't touch the cart
+
+    return {
+        "intent": intent,
+        "text": text,
+        "items": items,
+        "dish": dish,
+        "remove_dish": remove_dish,
+        "category": category,
+        "item": item,
+        "quantity": qty,
+        "qty_explicit": qty_explicit,
+        "ways": ways if ways >= 2 else 2,
+        "reply": str(raw.get("reply", "") or "").strip(),
+        "llm": True,
+    }
+
+
+def _messages(text: str, session):
+    return [{"role": "system", "content": _system_prompt(session)}] + \
+        session.history + [{"role": "user", "content": text}]
+
+
+def _via_groq(text: str, session) -> dict:
+    payload = {
+        "model": config.GROQ_LLM_MODEL,
+        "messages": _messages(text, session),
+        "response_format": {"type": "json_object"},
+        "temperature": 0.2,
+        "max_tokens": 200,
+    }
+    r = requests.post(
+        config.GROQ_CHAT_URL,
+        headers={"Authorization": f"Bearer {settings.groq_key()}"},
+        json=payload, timeout=12,
+    )
+    r.raise_for_status()
+    raw = json.loads(r.json()["choices"][0]["message"]["content"])
+    return _normalize(raw, text)
+
+
+def _local_prompt(session) -> str:
+    """A much shorter prompt for the on-device model.
+
+    LFM2-700M on a Pi CPU chokes on the full persona prompt (it's ~1k tokens),
+    so offline mode gets a compact instruction set. Accuracy is lower than the
+    cloud model — that's the honest trade for working without internet.
+    """
+    cart = "; ".join(f'{l["qty"]}x {l["dish"]["name"]}' for l in session.cart) or "empty"
+    return (
+        "You are Lumina, a restaurant waiter. Reply ONLY with compact JSON: "
+        '{"intent":..., "items":[{"dish":<exact menu name>,"quantity":<int>}], '
+        '"dish":"", "item":"", "ways":0, "reply":"<one short friendly sentence>"}\n'
+        f"intent is one of: {', '.join(INTENTS)}.\n"
+        f"MENU: {_menu_names()}.\n"
+        f"Cart: {cart}.\n"
+        "Only use dishes from MENU. Never invent dishes or state prices."
+    )
+
+
+def _via_local(text: str, session) -> dict:
+    msgs = [{"role": "system", "content": _local_prompt(session)}]
+    msgs += session.history[-4:]                  # short memory keeps it quick
+    msgs.append({"role": "user", "content": text})
+    payload = {
+        "model": LOCAL_MODEL,
+        "messages": msgs,
+        "format": "json", "stream": False, "keep_alive": "30m",
+        "options": {"temperature": 0.2, "num_predict": 120},
+    }
+    r = requests.post(OLLAMA_URL, json=payload, timeout=60)   # cold start is slow
+    r.raise_for_status()
+    raw = json.loads(r.json()["message"]["content"])
+    return _normalize(raw, text)
+
+
+def warm_local():
+    """Load the offline model into RAM so the first guest isn't kept waiting."""
+    try:
+        requests.post(OLLAMA_URL, timeout=120, json={
+            "model": LOCAL_MODEL, "messages": [{"role": "user", "content": "hi"}],
+            "stream": False, "keep_alive": "30m", "options": {"num_predict": 1}})
+        return True
+    except Exception as e:
+        print(f"  (could not warm local model: {e})", flush=True)
+        return False
+
+
+def understand(text: str, session) -> dict:
+    """Groq first (fast, accurate); local LFM2 fallback.
+
+    In offline mode `settings.groq_key()` returns "" so we never touch the
+    network — everything runs on the Pi.
+    """
+    if settings.groq_key():
+        try:
+            return _via_groq(text, session)
+        except Exception as e:
+            print(f"  (Groq NLU failed, trying local: {e})", flush=True)
+    return _via_local(text, session)
+
+
+def translate(text: str, language_name: str) -> str:
+    """Translate a (fact-bearing) reply into the guest's language, preserving
+    numbers and dish names. Groq only; returns the original on any failure."""
+    if not settings.groq_key() or not text:
+        return text
+    try:
+        payload = {
+            "model": config.GROQ_LLM_MODEL,
+            "messages": [
+                {"role": "system", "content":
+                    f"Translate the user's text into {language_name}. Keep all numbers, "
+                    f"prices and dish names exactly. Reply with ONLY the translation."},
+                {"role": "user", "content": text},
+            ],
+            "temperature": 0,
+            "max_tokens": 200,
+        }
+        r = requests.post(config.GROQ_CHAT_URL,
+                          headers={"Authorization": f"Bearer {settings.groq_key()}"},
+                          json=payload, timeout=10)
+        r.raise_for_status()
+        return r.json()["choices"][0]["message"]["content"].strip()
+    except Exception as e:
+        print(f"  (translate failed: {e})", flush=True)
+        return text
+
+
+def is_available() -> bool:
+    if settings.groq_key():
+        return True
+    try:
+        requests.get("http://localhost:11434/api/version", timeout=2).raise_for_status()
+        return True
+    except Exception:
+        return False
