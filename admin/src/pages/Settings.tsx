@@ -1,11 +1,20 @@
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
-import { Cloud, CloudOff, Zap, CheckCircle2, XCircle, Save } from "lucide-react"
+import { Cloud, CloudOff, Zap, CheckCircle2, XCircle, Save, Mic, MicOff, PowerOff } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { getSettings, saveSettings, testSettings, type Settings as S } from "@/lib/api"
+
+const ASSISTANT_STATES = [
+  { id: "active", icon: Mic, label: "Active",
+    desc: "Listening and speaking normally." },
+  { id: "muted", icon: MicOff, label: "Muted",
+    desc: "Still takes orders and updates the screen, but stays silent. Good for quiet hours." },
+  { id: "off", icon: PowerOff, label: "Off",
+    desc: "Ignores the wake word completely. Tables can still be run from here." },
+]
 
 const MODES = [
   { id: "auto", icon: Zap, label: "Auto (recommended)",
@@ -31,6 +40,7 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
 export default function SettingsPage() {
   const [s, setS] = useState<S | null>(null)
   const [key, setKey] = useState("")
+  const [pin, setPin] = useState("")
   const [busy, setBusy] = useState(false)
   const [health, setHealth] = useState<{ cloud_ok: boolean; ollama_up: boolean; detail: string } | null>(null)
 
@@ -38,7 +48,7 @@ export default function SettingsPage() {
   useEffect(() => { load() }, [])
   if (!s) return <div className="p-6 text-muted-foreground">Loading…</div>
 
-  const save = async (patch: Partial<S> & { groq_api_key?: string }) => {
+  const save = async (patch: Partial<S> & { groq_api_key?: string; admin_pin?: string }) => {
     setBusy(true)
     await saveSettings(patch)
     setBusy(false)
@@ -59,6 +69,25 @@ export default function SettingsPage() {
         <h1 className="font-display text-3xl font-semibold tracking-tight">Settings</h1>
         <p className="text-sm text-muted-foreground">Changes apply live — no restart needed</p>
       </header>
+
+      {/* Assistant on/off/mute */}
+      <Card className="mb-4">
+        <CardHeader><CardTitle>Assistant</CardTitle></CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-3">
+          {ASSISTANT_STATES.map((a) => {
+            const active = s.assistant_state === a.id
+            return (
+              <button key={a.id} onClick={() => save({ assistant_state: a.id })}
+                className={`text-left rounded-xl border p-4 transition-colors ${
+                  active ? "border-primary bg-primary/10" : "hover:bg-accent/50"}`}>
+                <a.icon className={`size-5 mb-2 ${active ? "text-primary" : "text-muted-foreground"}`} />
+                <div className="font-semibold text-sm">{a.label}</div>
+                <div className="text-xs text-muted-foreground mt-1">{a.desc}</div>
+              </button>
+            )
+          })}
+        </CardContent>
+      </Card>
 
       {/* Mode */}
       <Card className="mb-4">
@@ -138,6 +167,24 @@ export default function SettingsPage() {
           <Row label="Feedback form URL" hint="QR on the thank-you screen. Must be public (e.g. a Google Form)">
             <Input placeholder="https://forms.gle/…" defaultValue={s.feedback_url}
               onBlur={(e) => e.target.value !== s.feedback_url && save({ feedback_url: e.target.value })} />
+          </Row>
+        </CardContent>
+      </Card>
+
+      {/* Access */}
+      <Card className="mb-4">
+        <CardHeader><CardTitle>Console access</CardTitle></CardHeader>
+        <CardContent>
+          <Row label="Staff PIN" hint="4 digits. Everyone stays logged in until they lock or the server restarts.">
+            <div className="flex gap-2">
+              <Input type="password" inputMode="numeric" maxLength={6} placeholder="new PIN"
+                value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ""))} />
+              <Button disabled={pin.length < 4 || busy}
+                onClick={async () => { await save({ admin_pin: pin }); setPin("")
+                  toast.success("PIN changed — it applies to the next login") }}>
+                Change PIN
+              </Button>
+            </div>
           </Row>
         </CardContent>
       </Card>

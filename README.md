@@ -184,6 +184,30 @@ Unplug USB — it runs on battery over WiFi.
 
 ---
 
+## Panel buttons
+
+The E1002's three front keys give guests a silent path to service — useful in a
+loud room, for a shy guest, or when the assistant is muted. Active-low on
+GPIO 2 / 3 / 5, with a short beep on the GPIO 45 buzzer for feedback.
+
+| Key | Action |
+|---|---|
+| **left** | Call a waiter (raises the alert on the kitchen board) |
+| **middle** | Show the bill + UPI QR on the screen |
+| **right** | Mute / unmute the assistant |
+
+They publish to `lumina/table/<id>/button`; the voice app handles them.
+
+## Assistant state
+
+Set from **Settings → Assistant** (or the right panel button):
+
+- **Active** — listening and speaking.
+- **Muted** — still takes orders and updates the screen, but says nothing.
+  Good for quiet hours or a very loud room.
+- **Off** — ignores the wake word completely; staff can still run the table
+  from the console.
+
 ## Online vs offline
 
 Set in **Settings → Brain mode**. Applies within a second, no restart.
@@ -192,11 +216,20 @@ Set in **Settings → Brain mode**. Applies within a second, no restart.
 |---|---|---|---|---|
 | **auto** *(default)* | Groq Whisper → Vosk | Groq 70B → LFM2 | ~0.4 s | not required |
 | **online** | Groq Whisper | Groq 70B | ~0.4 s | required |
-| **offline** | Vosk | LFM2-700M | ~9 s | **none at all** |
+| **offline** | Vosk | rules → LFM2-700M | **~5 ms** common, ~9 s unusual | **none at all** |
 
 Offline genuinely makes **zero network calls** — wake word, STT, LLM, TTS and the
-display all run on the Pi. It is slower and less accurate; that's the honest
-trade. `auto` is recommended: cloud speed, local resilience.
+display all run on the Pi.
+
+**Why offline is fast:** the on-device model needs ~9 s per turn, so offline tries
+the **rule parser first** (`intents.py`). It is instant *and* reliably correct for
+the commands that make up almost every real turn — order X, what's my bill,
+remove the naan, what's in the pizza, bring water, I want to pay. Only genuinely
+unusual phrasing falls through to the slow local model. Measured: 0.1–5.6 ms.
+
+The remaining offline weak spot is **speech recognition** — Vosk's small model is
+less accurate than cloud Whisper at conversational distance. `auto` is
+recommended: cloud accuracy, local resilience.
 
 ---
 

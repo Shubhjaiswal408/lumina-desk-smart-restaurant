@@ -107,8 +107,19 @@ def _speak_espeak(text, lang="en"):
 
 
 def speak(text, lang="en"):
-    """Say `text` in the given espeak language code (default English)."""
+    """Say `text` in the given espeak language code (default English).
+
+    In "muted" state we still log and show the reply on the ePaper, we just
+    don't play audio — useful during quiet hours or a very loud room.
+    """
     print(f"[Lumina/{lang}] {text}")
+    try:
+        import settings
+        if settings.get("assistant_state") == "muted":
+            print("  (muted — not spoken)", flush=True)
+            return
+    except Exception:
+        pass
     if lang in VOICE_FILES and _PIPER_OK:
         try:
             if _piper(text, lang):

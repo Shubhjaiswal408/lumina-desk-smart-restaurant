@@ -31,6 +31,7 @@ import llm
 import mqtt_bus
 import payments
 import responses
+import settings
 import stt
 from audio import AudioCapture
 from session import Session
@@ -47,9 +48,62 @@ def _cart_sig(session):
     return tuple((l["dish"]["name"], l["qty"]) for l in session.cart)
 
 
+def _handle_button(key: str, tbl, client):
+    """The panel's three front buttons — a silent way to get service, so guests
+    aren't forced to talk (loud room, shy guest, or the assistant is off).
+
+      0 · left   → call a waiter
+      1 · middle → show the bill / pay QR on the screen
+      2 · right  → mute / unmute the assistant
+    """
+    session = tbl["session"]
+    if key == "0":
+        mqtt_bus.publish_event(client, "staff_called", table=config.TABLE_ID)
+        speak("Of course — I've called a server for you.")
+        print("  [button] waiter called", flush=True)
+
+    elif key == "1":
+        if session.is_empty():
+            speak("There's nothing on your bill yet.")
+            return
+        total = session.total()
+        url, ref = payments.upi_url(total, config.TABLE_ID)
+        try:
+            kds_data.record_payment(config.TABLE_ID, total, ref)
+        except Exception as e:
+            print(f"  (payment log failed: {e})", flush=True)
+        client.publish(mqtt_bus.T_PAY, json.dumps(
+            {"amount": total, "upi_url": url, "ref": ref,
+             "vpa": settings.get("upi_vpa", config.UPI_VPA)}), retain=True)
+        mqtt_bus.publish_event(client, "pay_requested",
+                               table=config.TABLE_ID, total=total)
+        speak(f"Your bill is {total:.0f} rupees. The QR code is on your screen.")
+        print(f"  [button] bill shown (₹{total:.0f})", flush=True)
+
+    elif key == "2":
+        now_muted = settings.get("assistant_state") != "muted"
+        settings.save({"assistant_state": "muted" if now_muted else "active"})
+        print(f"  [button] assistant {'muted' if now_muted else 'unmuted'}", flush=True)
+        if not now_muted:                 # speak only when turning sound back on
+            speak("I'm listening again.")
+
+
 def understand(transcript: str, session) -> dict:
-    """LLM first (understands context, corrections, off-menu). Rules only if no
-    LLM backend is reachable (offline)."""
+    """Work out what the guest wants.
+
+    Online: straight to the cloud LLM — it's fast (~0.4 s) and handles anything.
+
+    Offline: the on-device model takes ~9 s, so try the rule parser FIRST. It is
+    instant and reliably right for the common commands (order X, what's my bill,
+    remove the naan, what's in the pizza). Only genuinely unusual phrasing falls
+    through to the slow local model. Most turns end up instant instead of 9 s.
+    """
+    if settings.force_local():
+        rules = intents.parse_intent(transcript)
+        if rules["intent"] not in ("unknown", "smalltalk"):
+            print("  (rules — instant)", flush=True)
+            return rules
+
     if _LLM_ON:
         try:
             return llm.understand(transcript, session)
@@ -164,7 +218,8 @@ def main() -> None:
 
     def _on_bus(client, userdata, msg):
         """Kitchen says the table was served -> the party is done. Start a fresh
-        session so the NEXT guests never inherit the old cart/bill."""
+        session so the NEXT guests never inherit the old cart/bill.
+        Also handles the three physical buttons on the panel."""
         if msg.topic == mqtt_bus.T_KITCHEN and msg.payload == b"served":
             if tbl["session"].cart or tbl["welcomed"]:
                 tbl["session"] = Session()
@@ -172,9 +227,13 @@ def main() -> None:
                 print("  [table] served -> session reset for next guests", flush=True)
                 mqtt_bus.publish_order(client, tbl["session"])
 
+        elif msg.topic == mqtt_bus.T_BUTTON:
+            _handle_button(msg.payload.decode().strip(), tbl, client)
+
     try:
         _MQTT = mqtt_bus.make_client(f"voice-table-{config.TABLE_ID}", on_message=_on_bus)
         _MQTT.subscribe(mqtt_bus.T_KITCHEN)
+        _MQTT.subscribe(mqtt_bus.T_BUTTON)
     except Exception as e:
         print(f"  (MQTT bus unavailable: {e})", flush=True)
         _MQTT = None
@@ -211,7 +270,13 @@ def main() -> None:
                 tbl["session"] = Session()
                 tbl["welcomed"] = False
 
-            if score >= config.OWW_THRESHOLD and (now - last_trigger) > config.WAKE_COOLDOWN_SEC:
+            # Staff can switch the assistant off from the console or a panel
+            # button; the service keeps running, it just stops responding.
+            if settings.get("assistant_state") == "off":
+                continue
+
+            thresh = float(settings.get("wake_threshold", config.OWW_THRESHOLD))
+            if score >= thresh and (now - last_trigger) > config.WAKE_COOLDOWN_SEC:
                 last_trigger = now
                 print(f"\n  >>> WAKE ({score:.2f})", flush=True)
 

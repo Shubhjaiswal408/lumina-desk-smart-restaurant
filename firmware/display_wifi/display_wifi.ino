@@ -30,6 +30,28 @@ PubSubClient mqtt(net);
 String T_FRAME = String("lumina/table/") + TABLE_ID + "/frame";
 String T_ACK   = String("lumina/table/") + TABLE_ID + "/frame/ack";
 String T_PANEL = String("lumina/table/") + TABLE_ID + "/panel";
+String T_BTN   = String("lumina/table/") + TABLE_ID + "/button";
+
+// The three front buttons (active-low) and the buzzer, per Seeed's pinout.
+static const uint8_t KEYS[3] = {2, 3, 5};
+static const uint8_t BUZZER  = 45;
+static uint32_t lastPress[3] = {0, 0, 0};
+
+void beep(uint16_t ms = 60) {
+  tone(BUZZER, 2000, ms);
+}
+
+void pollButtons() {
+  for (int i = 0; i < 3; i++) {
+    if (digitalRead(KEYS[i]) == LOW && millis() - lastPress[i] > 400) {  // debounce
+      lastPress[i] = millis();
+      beep();
+      char msg[2] = {char('0' + i), 0};
+      mqtt.publish(T_BTN.c_str(), msg);
+      Serial.printf("[btn] key %d pressed\n", i);
+    }
+  }
+}
 
 void renderBuf() {
 #ifdef EPAPER_ENABLE
@@ -90,6 +112,9 @@ void setup() {
   epaper.begin();
 #endif
 
+  for (int i = 0; i < 3; i++) pinMode(KEYS[i], INPUT_PULLUP);
+  pinMode(BUZZER, OUTPUT);
+
   Serial.print("\n[wifi] connecting to ");
   Serial.println(WIFI_SSID);
   WiFi.mode(WIFI_STA);
@@ -137,4 +162,5 @@ void loop() {
   }
   if (!mqtt.connected()) connectMqtt();
   mqtt.loop();
+  pollButtons();
 }

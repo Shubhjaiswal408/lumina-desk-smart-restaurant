@@ -26,6 +26,12 @@ DEFAULTS = {
     "mode": "auto",
     "groq_api_key": "",            # blank -> falls back to the .groq_key file
 
+    # --- assistant state (controlled from the console / panel buttons) ---
+    # "active" : listens and speaks
+    # "muted"  : still listens and updates the screen, but stays silent
+    # "off"    : ignores the wake word entirely
+    "assistant_state": "active",
+
     # --- restaurant ---
     "restaurant_name": "Lumina",
     "table_id": config.TABLE_ID,

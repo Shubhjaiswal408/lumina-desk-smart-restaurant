@@ -63,6 +63,21 @@ def parse_intent(text: str) -> dict:
     if has("pay", "payment", "upi", "qr code", "scan"):
         return {"intent": "pay", "text": text}
 
+    # Clear the whole order
+    if has("clear my order", "cancel everything", "cancel my order", "start over",
+           "empty the cart", "clear the order", "cancel the order"):
+        return {"intent": "clear_cart", "text": text}
+
+    # Remove a dish (kept before ordering so "remove the naan" isn't an order)
+    if has("remove", "take off", "take out", "cancel the", "don't want", "dont want",
+           "no longer want"):
+        d = menu.find_dish(t)
+        if d:
+            return {"intent": "remove", "text": text, "remove_dish": d,
+                    "quantity": _quantity(t),
+                    "qty_explicit": bool(re.search(
+                        r"\b(\d+|one|two|three|four|five|a|an|single)\b", t))}
+
     # Recommendation
     if has("recommend", "suggest", "special", "what should i", "what's good",
            "whats good", "popular", "famous", "signature", "best dish", "your best"):

@@ -63,7 +63,8 @@ async function authFetch(p: string, init?: RequestInit) {
 
 const j = (p: string) => authFetch(p).then((r) => r.json())
 export type Settings = {
-  mode: string; groq_api_key_masked?: string; has_key?: boolean; ollama_up?: boolean
+  mode: string; assistant_state: string
+  groq_api_key_masked?: string; has_key?: boolean; ollama_up?: boolean
   restaurant_name: string; table_id: string
   tax_mode: string; tax_rate: number; upi_vpa: string; upi_payee: string
   feedback_url: string; wake_threshold: number; vad_silence_sec: number
