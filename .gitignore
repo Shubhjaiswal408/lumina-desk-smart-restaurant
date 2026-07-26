@@ -19,3 +19,4 @@ tools/
 .claude/
 ui_*.png
 *.log
+*.done
