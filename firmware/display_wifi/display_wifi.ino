@@ -270,7 +270,11 @@ void setup() {
   pinMode(BUZZER, OUTPUT);
 
   mqtt.setBufferSize(2048);          // holds one ~1 KB chunk + overhead
-  mqtt.setKeepAlive(60);
+  // Generous: mqtt.loop() can't run during a refresh, so no PINGREQ goes out
+  // for ~20 s at a time. Too tight a keepalive would have the broker drop us
+  // mid-render, and the reconnect would ask for the frame again — a loop that
+  // redraws the panel forever.
+  mqtt.setKeepAlive(120);
   mqtt.setSocketTimeout(5);          // don't stall the loop on a dead broker
   mqtt.setCallback(onMsg);
 
@@ -301,10 +305,12 @@ void loop() {
       if (millis() >= nextMqttAttempt) tryMqtt();
     } else {
       mqtt.loop();
-      // Re-announce now and then. If the Pi restarted, or a frame went missing,
-      // this is what gets the current screen pushed again.
+      // A presence ping, NOT a request for a frame — "online" is retained and
+      // means "I have just joined and my screen may be wrong, send me one".
+      // Repeating that every minute would make the Pi redraw a screen that is
+      // already correct, and a colour refresh costs ~20 s and real battery.
       if (millis() - lastHeartbeat > HEARTBEAT_EVERY) {
-        mqtt.publish(T_PANEL.c_str(), "online", true);
+        mqtt.publish(T_PANEL.c_str(), "alive");
         lastHeartbeat = millis();
       }
     }

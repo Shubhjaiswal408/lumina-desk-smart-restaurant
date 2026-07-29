@@ -33,7 +33,8 @@ def run_wifi():
     # order; when it acks (or times out) we send the newest state. The panel thus
     # always converges to the current order instead of falling behind.
     st = {"pending": None, "sent": None, "busy": False, "sent_at": 0.0,
-          "order": None, "kitchen": None, "pay": None, "paid": False}
+          "order": None, "kitchen": None, "pay": None, "paid": False,
+          "panel_seen": 0.0}
     BUSY_TIMEOUT = 35.0
 
     def _rerender():
@@ -101,10 +102,18 @@ def run_wifi():
                 st["kitchen"] = msg.payload.decode()
                 _rerender()
                 _maybe_send(client)
-            elif msg.topic == mqtt_bus.T_PANEL and msg.payload == b"online":
-                frame = st["pending"] or st["sent"]
-                if frame is not None:
-                    _send(client, frame)   # panel (re)joined -> push current state
+            elif msg.topic == mqtt_bus.T_PANEL:
+                # "online" (retained) = the panel just joined and its screen may
+                # be wrong, so push the current state. "alive" is only a presence
+                # ping — answering it would redraw a correct screen every minute,
+                # and a colour refresh costs ~20 s and real battery.
+                if msg.payload == b"online":
+                    frame = st["pending"] or st["sent"]
+                    if frame is not None:
+                        _send(client, frame)
+                        print("[display-service] panel joined -> pushing current screen")
+                elif msg.payload == b"alive":
+                    st["panel_seen"] = time.time()
             elif msg.topic == mqtt_bus.T_ACK:
                 st["busy"] = False
                 print("[display-service] panel confirmed refresh")
