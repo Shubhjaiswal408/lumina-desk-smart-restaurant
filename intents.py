@@ -38,6 +38,47 @@ def _split_ways(text: str) -> int:
     return 2
 
 
+# "one margherita and two cold coffees" is one sentence but two order lines, so
+# the offline path has to split it — otherwise a guest ordering two things
+# offline silently gets one of them.
+# Deliberately no "with": "a pizza with extra cheese" is one dish and a
+# modifier, not two dishes.
+_JOINERS = re.compile(r"\s*(?:,|\band\b|\bplus\b|\balso\b|&)\s*")
+_AND, _AMP = "\x00", "\x01"
+
+
+def _protect_names(t: str) -> str:
+    """Menu names contain joiners of their own — "Corn & Cheese Garlic Bread",
+    "Veg. & Paneer Zingy Parcel". Hide those before splitting so a dish never
+    gets cut in half."""
+    for d in menu.all_dishes():
+        for name in [d["name"]] + list(d.get("aliases") or []):
+            n = name.lower()
+            if (" and " in n or "&" in n) and n in t:
+                t = t.replace(n, n.replace(" and ", _AND).replace("&", _AMP))
+    return t
+
+
+def _order_items(t: str) -> list:
+    """Every dish named in the sentence, each with its own quantity and size."""
+    items, seen = [], set()
+    for clause in _JOINERS.split(_protect_names(t)):
+        clause = clause.replace(_AND, " and ").replace(_AMP, "&").strip()
+        if not clause:
+            continue
+        d = menu.find_dish(clause)
+        if d is None or d["name"] in seen:
+            continue
+        seen.add(d["name"])
+        items.append({"dish": d, "quantity": _quantity(clause),
+                      "size": menu.find_size(clause, d) or ""})
+    return items
+
+
+# Does the sentence read like a question at all?
+_QUESTION = re.compile(r"^(is|are|was|does|do|can|could|would|has|have|which|what|any)\b"
+                       r"|\?\s*$")
+
 _END_PHRASES = {
     "no", "nope", "no thanks", "no thank you", "nothing", "nothing else",
     "that's all", "thats all", "that's it", "thats it", "that will be all",
@@ -52,6 +93,9 @@ def parse_intent(text: str) -> dict:
         return {"intent": "unknown", "text": text}
 
     has = lambda *kw: any(k in t for k in kw)
+    # Whole-word test. Needed for short tokens that hide inside dish names —
+    # "nut" is in "Hazelnut Cold Coffee", "veg" is in half this menu.
+    word = lambda *kw: any(re.search(rf"\b{k}\b", t) for k in kw)
 
     # End of conversation — short, explicit closings only.
     stripped = t.strip(" .!,")
@@ -92,12 +136,16 @@ def parse_intent(text: str) -> dict:
         return {"intent": "check_bill", "text": text}
 
     # Allergy questions
-    if has("allerg", "peanut", "gluten", "dairy", "lactose", "nut", "soy", "safe to eat"):
+    if has("allerg", "lactose", "safe to eat") or word("peanut", "peanuts", "gluten",
+                                                       "dairy", "nut", "nuts", "soy"):
         return {"intent": "ask_allergen", "text": text, "dish": menu.find_dish(t)}
 
-    # Ingredient / dietary questions
-    if has("ingredient", "what's in", "whats in", "what is in", "made of", "made with",
-           "contain", "vegetarian", "veg", "vegan", "non veg", "nonveg"):
+    # Ingredient / dietary questions. Diet words alone aren't enough: on an
+    # all-veg menu, "two mix veg momo" is an ORDER, not a question about veg.
+    asking = has("ingredient", "what's in", "whats in", "what is in", "made of",
+                 "made with", "contain")
+    diet = word("vegetarian", "vegan", "eggless", "jain") or has("non veg", "nonveg", "non-veg")
+    if asking or (diet and _QUESTION.search(t)):
         return {"intent": "ask_ingredient", "text": text, "dish": menu.find_dish(t)}
 
     # Menu
@@ -122,12 +170,12 @@ def parse_intent(text: str) -> dict:
         return {"intent": "order_item", "text": text, "dish": None,
                 "quantity": _quantity(t), "use_context": True}
 
-    # Food order
-    dish = menu.find_dish(t)
-    if dish and has("order", "want", "get", "bring", "have", "give", "add", "like", "i'll"):
-        return {"intent": "order_item", "text": text, "dish": dish, "quantity": _quantity(t)}
-    # Bare dish name with no verb — still treat as an order attempt
-    if dish:
-        return {"intent": "order_item", "text": text, "dish": dish, "quantity": _quantity(t)}
+    # Food order. A bare dish name with no verb still counts as an order attempt.
+    items = _order_items(t)
+    if items:
+        first = items[0]
+        return {"intent": "order_item", "text": text, "items": items,
+                "dish": first["dish"], "quantity": first["quantity"],
+                "size": first["size"]}
 
     return {"intent": "unknown", "text": text}

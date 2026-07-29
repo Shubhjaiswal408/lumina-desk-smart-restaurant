@@ -26,6 +26,7 @@ T_FRAME = f"{BASE}/frame"          # packed 800x480 image chunks -> WiFi panel
 T_ACK = f"{BASE}/frame/ack"        # panel confirms a rendered frame
 T_PANEL = f"{BASE}/panel"          # panel presence ("online")
 T_KITCHEN = f"{BASE}/kitchen"      # kitchen -> table status (preparing/ready/served)
+T_ASSISTANT = "lumina/assistant"    # active | muted | off (house-wide)
 T_BUTTON = f"{BASE}/button"        # front panel keys: "0" waiter, "1" bill, "2" mute
 T_PAY = f"{BASE}/pay"              # show the UPI QR on the table's ePaper
 T_PAID = f"{BASE}/payment"         # "paid" once the money is confirmed
@@ -56,7 +57,8 @@ def order_payload(session, status: str = "Listening") -> dict:
     return {
         "table": config.TABLE_ID,
         "status": status,
-        "items": [{"name": l["dish"]["name"], "qty": l["qty"]} for l in session.cart],
+        "items": [{"name": l["dish"]["name"], "qty": l["qty"],
+                   "size": l.get("size") or ""} for l in session.cart],
         "subtotal": session.subtotal(),
         "tax": session.tax(),
         "total": session.total(),

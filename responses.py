@@ -1,23 +1,26 @@
-"""Spoken responses for the Lumina Desk restaurant scenario.
+"""Spoken lines for Lumina.
 
-Kept separate from the audio loop so lines are easy to tune / translate later.
+Tone note: this outlet is a busy, casual pure-veg pizza place — not fine dining.
+So the lines are friendly and quick, the way good counter staff talk. No
+"good evening sir", no speeches; guests want to order and get on with it.
+
+Kept separate from the audio loop so they're easy to tune or translate.
 """
 import random
 
-# Said the moment the wake word is detected. Short so it feels responsive.
+# Said the instant the wake word fires. Short, so it feels snappy.
 GREETINGS = [
-    "Yes, how can I help?",
-    "At your service — what would you like?",
-    "Of course, go ahead.",
-    "I'm right here. What can I get you?",
-    "Yes? Tell me what you'd like.",
+    "Yeah? What can I get you?",
+    "I'm listening.",
+    "Go ahead!",
+    "Sure — what would you like?",
+    "Yep, tell me.",
 ]
 
-# A fuller welcome — used for the very first wake of a session.
+# First wake of a session. Says who it is and the two things guests ask most.
 WELCOME = (
-    "Good evening, and welcome. I'm Lumina, your waiter this evening. "
-    "I can walk you through the menu, take your order, or answer anything about "
-    "a dish. What can I get started for you?"
+    "Hey, welcome! I'm Lumina. Tell me what you'd like and I'll get it in — "
+    "I can read out the menu, check what's in a dish, or bring you the bill."
 )
 
 

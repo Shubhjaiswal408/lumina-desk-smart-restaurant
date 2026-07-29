@@ -108,9 +108,8 @@ class Session:
         return int(min(round(eta), slowest * 2 + 20))   # never promise absurd times
 
     def line_label(self, line) -> str:
-        """'2 Large Margherita' — size first, the way a waiter would say it."""
-        size = line.get("size")
-        return f'{size} {line["dish"]["name"]}' if size else line["dish"]["name"]
+        """'Large Margherita', 'Mix Veg. Momo (Gravy)' — see menu.label_for."""
+        return menu.label_for(line["dish"], line.get("size"))
 
     def line_summary(self) -> str:
         parts = [f'{line["qty"]} {self.line_label(line)}' for line in self.cart]

@@ -1,0 +1,97 @@
+"""Offline fast-path tests — no mic, no network, no services.
+
+The rule parser (intents.py) is what answers the guest when the internet is down,
+so it has to be right. Every case here is a mistake this system actually made.
+
+    ./venv/bin/python tests/test_offline.py
+"""
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import dialog          # noqa: E402
+import intents         # noqa: E402
+import menu            # noqa: E402
+from session import Session   # noqa: E402
+
+FAILURES = []
+
+
+def check(cond, what):
+    if not cond:
+        FAILURES.append(what)
+    print(("  ok  " if cond else "  FAIL") + "  " + what)
+
+
+def intent(text, expected):
+    got = intents.parse_intent(text)["intent"]
+    check(got == expected, f'"{text}" -> {expected} (got {got})')
+
+
+def cart_of(text):
+    """Run one utterance through the offline path and return the resulting cart."""
+    s = Session()
+    dialog.handle(intents.parse_intent(text), s)
+    return [(s.line_label(l), l["qty"]) for l in s.cart]
+
+
+def order(text, expected):
+    got = cart_of(text)
+    check(got == expected, f'"{text}" -> {expected} (got {got})')
+
+
+print("\nIntent classification")
+# Half this menu has "Veg." in the name — those are orders, not diet questions.
+intent("one veg cheese momo", "order_item")
+intent("two mix veg momo", "order_item")
+intent("crispy veg burger", "order_item")
+# "nut" hides inside "Hazelnut", so allergen matching must be whole-word.
+intent("one hazelnut cold coffee", "order_item")
+# Real questions still classify as questions.
+intent("is the margherita vegetarian", "ask_ingredient")
+intent("what is in the veg cheese momo", "ask_ingredient")
+intent("does it contain nuts", "ask_allergen")
+intent("i am allergic to gluten", "ask_allergen")
+# The rest of the everyday commands.
+intent("what is my bill", "check_bill")
+intent("remove the cold coffee", "remove")
+intent("bring me two water", "request_item")
+intent("i want to pay", "pay")
+intent("cancel my order", "clear_cart")
+intent("that's all", "end_conversation")
+
+print("\nMulti-item orders")
+order("one large margherita and two cold coffee",
+      [("Large Margherita", 1), ("Cold Coffee", 2)])
+order("three choco lava cake, one hot brownie and two lemon iced tea",
+      [("Choco Lava Cake", 3), ("Hot Brownie", 1), ("Lemon Iced Tea", 2)])
+# Dish names contain "and"/"&" of their own — the split must not cut them.
+order("two corn and cheese garlic bread", [("Corn & Cheese Garlic Bread", 2)])
+order("veg and paneer zingy parcel", [("Veg. & Paneer Zingy Parcel", 1)])
+# "with" introduces a modifier, not a second dish.
+order("one margherita with extra cheese", [("Regular Margherita", 1)])
+
+print("\nSizes and labels")
+order("i want a paneer momo in gravy and one peri peri fries large",
+      [("Paneer Momo (Gravy)", 1), ("Large Peri-Peri Fries", 1)])
+pizza = menu.find_dish("margherita")
+burger = menu.find_dish("classic aloo tikki burger")
+check(menu.label_for(pizza, "Large") == "Large Margherita", "a real size leads")
+check(menu.label_for(burger, "Cheese Ring") == "Classic Aloo Tikki Burger (Cheese Ring)",
+      "a variant trails in brackets")
+
+print("\nMoney is computed, never spoken by a model")
+s = Session()
+s.add_dish(pizza, 2, "Large")
+check(s.subtotal() == 2 * menu.price_for(pizza, "Large"), "subtotal multiplies correctly")
+check(s.total() == s.subtotal(), "inclusive tax leaves the total alone")
+check(all(d["veg"] for d in menu.MENU), "the whole menu is vegetarian")
+
+print()
+if FAILURES:
+    print(f"{len(FAILURES)} failure(s):")
+    for f in FAILURES:
+        print("  -", f)
+    sys.exit(1)
+print("all good")

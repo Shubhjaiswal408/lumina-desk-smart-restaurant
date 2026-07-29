@@ -60,6 +60,23 @@ def _tracked(draw, xy, s, fnt, fill, tracking):
         x += draw.textlength(ch, font=fnt) + tracking
 
 
+def _fit(draw, s, fnt, width):
+    """Trim `s` to `width` px, breaking on a space so it never reads like a typo
+    ("Cheese Stuffed Garlic Br"). Falls back to a hard cut for one long word."""
+    if draw.textlength(s, font=fnt) <= width:
+        return s
+    ell = "…"
+    words = s.split()
+    while len(words) > 1:
+        words.pop()
+        cut = " ".join(words) + ell
+        if draw.textlength(cut, font=fnt) <= width:
+            return cut
+    while s and draw.textlength(s + ell, font=fnt) > width:
+        s = s[:-1]
+    return s + ell
+
+
 def _right(draw, xr, y, s, fnt, fill):
     draw.text((xr - draw.textlength(s, font=fnt), y), s, font=fnt, fill=fill)
 
@@ -82,6 +99,22 @@ def _brand():
         return "Lumina"
 
 
+def _assistant_state():
+    try:
+        import settings
+        return settings.get("assistant_state", "active")
+    except Exception:
+        return "active"
+
+
+def _mute_glyph(d, cx, cy, color):
+    """A small speaker with a slash — reads as 'muted' at a glance."""
+    d.polygon([(cx - 7, cy - 3), (cx - 3, cy - 3), (cx + 1, cy - 8),
+               (cx + 1, cy + 8), (cx - 3, cy + 3), (cx - 7, cy + 3)], fill=color)
+    d.line([cx + 4, cy - 7, cx + 12, cy + 7], fill=color, width=2)
+    d.line([cx + 12, cy - 7, cx + 4, cy + 7], fill=color, width=2)
+
+
 def _header(d, table, status, listening):
     _brandmark(d, MARGIN + 8, 52)
     _tracked(d, (MARGIN + 28, 30), _brand().upper(), font("serif_bold", 44), BLACK, 3)
@@ -91,12 +124,25 @@ def _header(d, table, status, listening):
     # tagline row beneath it.
     tf = font("sans_bold", 18)
     _right(d, W - MARGIN, 43, f"Table {table}", tf, BLACK)
-    sf = font("sans", 15)
-    sw = d.textlength(status, font=sf)
-    sx = W - MARGIN - sw
-    if listening:
-        d.ellipse([sx - 20, 84, sx - 8, 96], fill=RED)
-    d.text((sx, 80), status, font=sf, fill=BLACK)
+
+    # When staff have muted the assistant, say so plainly — otherwise a guest
+    # would talk to a screen that has quietly stopped answering.
+    state = _assistant_state()
+    if state in ("muted", "off"):
+        label = "Voice muted" if state == "muted" else "Voice off"
+        sf = font("sans_bold", 15)
+        sw = d.textlength(label, font=sf)
+        bx0 = W - MARGIN - sw - 56
+        d.rounded_rectangle([bx0, 76, W - MARGIN, 104], radius=14, outline=RED, width=2)
+        _mute_glyph(d, bx0 + 20, 90, RED)
+        d.text((bx0 + 42, 80), label, font=sf, fill=RED)
+    else:
+        sf = font("sans", 15)
+        sw = d.textlength(status, font=sf)
+        sx = W - MARGIN - sw
+        if listening:
+            d.ellipse([sx - 20, 84, sx - 8, 96], fill=RED)
+        d.text((sx, 80), status, font=sf, fill=BLACK)
 
     d.line([MARGIN, 112, W - MARGIN, 112], fill=BLACK, width=2)
 
@@ -169,19 +215,7 @@ def _kitchen_banner(d, kitchen):
     return 44   # vertical space consumed by the banner
 
 
-def _broadcast_strip(d, message):
-    """House announcement from the manager, across the foot of the screen."""
-    if not message:
-        return
-    y = H - 92
-    d.rounded_rectangle([MARGIN, y, W - MARGIN, y + 36], radius=8, fill=RED)
-    f = font("sans_bold", 17)
-    w = d.textlength(message, font=f)
-    d.text(((W - w) / 2, y + 8), message, font=f, fill=WHITE)
-
-
-def render_order(session, table="07", status="Listening", hint=None, kitchen=None,
-                 broadcast=None):
+def render_order(session, table="07", status="Listening", hint=None, kitchen=None):
     img = Image.new("RGB", (W, H), WHITE)
     d = ImageDraw.Draw(img)
     rupee = _rupee(font("sans_bold", 20))
@@ -197,9 +231,11 @@ def render_order(session, table="07", status="Listening", hint=None, kitchen=Non
             dish, qty = line["dish"], line["qty"]
             qf, nf, pf = font("sans_bold", 24), font("sans", 23), font("sans_bold", 21)
             d.text((MARGIN, y), str(qty), font=qf, fill=RED)
-            name = session.line_label(line)
-            d.text((MARGIN + 36, y + 1), name, font=nf, fill=BLACK)
             price = _money(session.line_price(line) * qty)
+            # keep the name clear of the price so the dotted leader always shows
+            room = price_rail - (MARGIN + 36) - d.textlength(price, font=pf) - 24
+            name = _fit(d, session.line_label(line), nf, room)
+            d.text((MARGIN + 36, y + 1), name, font=nf, fill=BLACK)
             name_end = MARGIN + 36 + d.textlength(name, font=nf)
             price_left = price_rail - d.textlength(price, font=pf)
             lx = name_end + 14                      # dotted leader ties name -> price
@@ -217,9 +253,62 @@ def render_order(session, table="07", status="Listening", hint=None, kitchen=Non
         _footer(d, hint or "Say “Hey Lumina” to add more, or to pay.")
     else:
         _render_welcome(d)
-        _footer(d, hint or "Say “Hey Lumina” to begin your order.")
+        _footer(d, hint or "Pure veg  ·  Pizzas, burgers, momos, shakes  ·  Table service by voice")
 
-    _broadcast_strip(d, broadcast)
+    return img
+
+
+def _seal(d, cx, cy, r=34):
+    """A struck-seal motif: double ring + tick. Reads as 'settled' instantly and
+    gives the screen a centre of gravity the old left-aligned layout lacked."""
+    d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=RED, width=3)
+    d.ellipse([cx - r + 7, cy - r + 7, cx + r - 7, cy + r - 7], outline=RED, width=1)
+    d.line([cx - 15, cy + 1, cx - 5, cy + 12], fill=RED, width=4)
+    d.line([cx - 5, cy + 12, cx + 16, cy - 13], fill=RED, width=4)
+
+
+def _render_thanks(session, table, rupee):
+    """Closing screen. Centred and calm — the meal is done, so this is the one
+    screen that gets to be quiet: seal, thanks, what was paid, and a small
+    invitation to leave feedback."""
+    img = Image.new("RGB", (W, H), WHITE)
+    d = ImageDraw.Draw(img)
+    _header(d, table, "Paid", listening=False)
+
+    import settings as _st
+    fb = _st.get("feedback_url", "")
+    cx = W // 2 if not fb else 300          # shift left to make room for the QR
+
+    _seal(d, cx, 222)
+
+    tf = font("serif", 40)
+    tw = d.textlength("Thank you", font=tf)
+    d.text((cx - tw / 2, 276), "Thank you", font=tf, fill=BLACK)
+
+    sf = font("sans", 17)
+    line = f"{rupee}{_money(session.total())} paid in full"   # table is in the header
+    lw = d.textlength(line, font=sf)
+    d.text((cx - lw / 2, 334), line, font=sf, fill=BLACK)
+
+    # A hairline rule under the block ties it to the rest of the design system.
+    d.line([cx - 110, 372, cx + 110, 372], fill=BLACK, width=1)
+    cf = font("sans", 15)
+    cl = "Come back soon"
+    cw = d.textlength(cl, font=cf)
+    d.text((cx - cw / 2, 384), cl, font=cf, fill=BLACK)
+
+    if fb:
+        import payments as _p
+        q = _p.qr_image(fb, box_size=5, border=1)
+        q = q.resize((150, 150), Image.NEAREST).convert("L").point(
+            lambda v: 255 if v > 128 else 0).convert("RGB")
+        qx, qy = W - MARGIN - 176, 186
+        d.rounded_rectangle([qx - 13, qy - 13, qx + 163, qy + 205], radius=12,
+                            outline=BLACK, width=2)
+        img.paste(q, (qx, qy))
+        _tracked(d, (qx + 2, qy + 168), "HOW DID WE DO?", font("sans_bold", 13), BLACK, 1)
+        d.text((qx + 2, qy + 186), "Scan to tell us", font=font("sans", 13), fill=BLACK)
+
     return img
 
 
@@ -230,26 +319,8 @@ def render_payment(session, upi_url, table="07", vpa="", paid=False):
     rupee = _rupee(font("sans_bold", 20))
     _header(d, table, "Paid · thank you" if paid else "Ready to pay", listening=False)
 
-    if paid:                       # confirmation screen after the money lands
-        d.text((MARGIN, 175), "Payment received —", font=font("serif", 38), fill=BLACK)
-        d.text((MARGIN, 227), "thank you!", font=font("serif", 38), fill=RED)
-        d.text((MARGIN, 296), f"{rupee}{_money(session.total())} paid in full.",
-               font=font("sans", 20), fill=BLACK)
-
-        import settings as _st
-        _fb = _st.get("feedback_url", "")
-        if _fb:
-            import payments as _p
-            fq = _p.qr_image(_fb, box_size=5, border=1)
-            fq = fq.resize((150, 150), Image.NEAREST).convert("L").point(
-                lambda v: 255 if v > 128 else 0).convert("RGB")
-            fx, fy = W - MARGIN - 150, 170
-            img.paste(fq, (fx, fy))
-            d.text((fx - 4, fy + 158), "How did we do?", font=font("sans_bold", 14), fill=BLACK)
-            d.text((fx - 4, fy + 178), "Scan to tell us", font=font("sans", 13), fill=BLACK)
-
-        _footer(d, "We hope to see you again soon.")
-        return img
+    if paid:
+        return _render_thanks(session, table, rupee)
 
     # --- QR (left) ---
     # NEAREST resampling keeps the QR strictly black/white; any smoothing would
@@ -273,9 +344,12 @@ def render_payment(session, upi_url, table="07", vpa="", paid=False):
     for line in session.cart[:5]:
         dish, qty = line["dish"], line["qty"]
         d.text((rx, y), f"{qty}", font=font("sans_bold", 19), fill=RED)
-        d.text((rx + 28, y), session.line_label(line)[:24], font=font("sans", 19), fill=BLACK)
-        _right(d, W - MARGIN, y + 1, _money(session.line_price(line) * qty),
-               font("sans_bold", 18), BLACK)
+        nf, pf = font("sans", 19), font("sans_bold", 18)
+        total = _money(session.line_price(line) * qty)
+        # leave room for the price on the right, then trim the name to what's left
+        room = (W - MARGIN) - (rx + 28) - d.textlength(total, font=pf) - 16
+        d.text((rx + 28, y), _fit(d, session.line_label(line), nf, room), font=nf, fill=BLACK)
+        _right(d, W - MARGIN, y + 1, total, pf, BLACK)
         y += 30
     if len(session.cart) > 5:
         d.text((rx + 28, y), f"+{len(session.cart) - 5} more", font=font("sans", 15), fill=BLACK)
@@ -295,15 +369,23 @@ def render_payment(session, upi_url, table="07", vpa="", paid=False):
 
 
 def _render_welcome(d):
-    """Empty-cart state: a calm welcome. The menu is on the table already, so we
-    don't repeat it here — just invite the guest to speak."""
-    d.text((MARGIN, 176), "Welcome to your table.", font=font("serif", 34), fill=BLACK)
-    d.text((MARGIN, 236), "I’m Lumina, your dining assistant. Just say",
+    """Empty-cart state. The printed menu is already on the table, so this screen
+    doesn't repeat it — it teaches the one thing a new guest needs to know: the
+    wake word, and the three things worth asking for."""
+    d.text((MARGIN, 156), "Just say", font=font("sans", 20), fill=BLACK)
+    d.text((MARGIN, 186), "“Hey Lumina”", font=font("serif_bold", 46), fill=RED)
+
+    d.text((MARGIN, 258), "…and order without waiting for anyone.",
            font=font("sans", 18), fill=BLACK)
-    d.text((MARGIN, 262), "“Hey Lumina” and I’ll take your order, answer",
-           font=font("sans", 18), fill=BLACK)
-    d.text((MARGIN, 288), "questions about any dish, and settle the bill.",
-           font=font("sans", 18), fill=BLACK)
+
+    # Three concrete openers, so nobody has to guess what it understands.
+    y = 300
+    for line in ('"One large Margherita"',
+                 '"What\'s in the Paneer Tikka?"',
+                 '"What\'s my bill?"'):
+        d.ellipse([MARGIN + 2, y + 7, MARGIN + 8, y + 13], fill=RED)
+        d.text((MARGIN + 22, y), line, font=font("sans", 17), fill=BLACK)
+        y += 28
 
 
 # --- ePaper 3-color quantization ---
@@ -316,13 +398,44 @@ def to_epaper(img):
 
 
 if __name__ == "__main__":
+    # Renders every panel state to docs/images/ — exactly what the ePaper shows,
+    # so the screenshots in the README can never drift from the real code.
+    #   ./venv/bin/python ui_render.py
+    import pathlib
+
+    import payments
+    import settings
     from session import Session
-    # With an order
-    s = Session()
-    s.add_dish(menu.find_dish("butter chicken"), 2)
-    s.add_dish(menu.find_dish("butter naan"), 2)
-    s.add_dish(menu.find_dish("masala chai"), 1)
-    to_epaper(render_order(s)).convert("RGB").save("/home/techiesms/lumina-desk/ui_order.png")
-    # Empty / welcome
-    to_epaper(render_order(Session())).convert("RGB").save("/home/techiesms/lumina-desk/ui_welcome.png")
-    print("saved ui_order.png and ui_welcome.png")
+
+    # Render the docs against a demo venue, so nobody's real UPI ID or feedback
+    # form ends up in a public screenshot.
+    _real = settings.get
+    _demo = {"upi_vpa": "auntynoz@upi", "upi_payee": "Auntyno-Z Pizza",
+             "feedback_url": "https://forms.gle/luminadesk"}
+    settings.get = lambda k, d=None: _demo.get(k, _real(k, d))
+
+    out = pathlib.Path(__file__).parent / "docs" / "images"
+    out.mkdir(parents=True, exist_ok=True)
+
+    def save(img, name):
+        to_epaper(img).convert("RGB").save(out / f"epaper-{name}.png")
+
+    def order():
+        s = Session()
+        s.add_dish(menu.find_dish("margherita"), 1, "Large")
+        s.add_dish(menu.find_dish("cheese stuffed garlic bread"), 2)
+        s.add_dish(menu.find_dish("cold coffee"), 2)
+        return s
+
+    save(render_order(Session()), "welcome")
+    save(render_order(order()), "order")
+    save(render_order(order(), kitchen="preparing"), "preparing")
+
+    _demo["assistant_state"] = "muted"      # the badge reads Settings, not `status`
+    save(render_order(order()), "muted")
+    del _demo["assistant_state"]
+
+    url, _ = payments.upi_url(order().total(), "07")
+    save(render_payment(order(), url, vpa="auntynoz@upi"), "pay")
+    save(render_payment(order(), url, paid=True), "thanks")
+    print(f"saved 6 panel states to {out}")

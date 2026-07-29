@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { Card } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
-import { getHistory, type HistoryOrder } from "@/lib/api"
+import { getHistory, dishLabel, type HistoryOrder } from "@/lib/api"
 
 const when = (ts: number) =>
   new Date(ts * 1000).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
@@ -45,7 +45,7 @@ export default function Orders() {
                 <TableCell className="text-muted-foreground">{o.id}</TableCell>
                 <TableCell><Badge variant="outline">T{o.table}</Badge></TableCell>
                 <TableCell className="text-sm">
-                  {o.items.map((i) => `${i.qty}× ${i.name}`).join(", ")}
+                  {o.items.map((i) => `${i.qty}× ${dishLabel(i.name, i.size)}`).join(", ")}
                 </TableCell>
                 <TableCell className="text-right font-semibold">₹{Math.round(o.total)}</TableCell>
                 <TableCell className="text-right text-muted-foreground text-sm">{when(o.served_at)}</TableCell>

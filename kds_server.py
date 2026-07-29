@@ -152,10 +152,11 @@ def _apply_order(table: str, payload: dict):
     items = []
     for it in payload.get("items", []):
         name, qty = it["name"], it.get("qty", 1)
+        size = it.get("size") or ""
         meta = _dish_meta(name)
         old = prev_items.get(name)
         items.append({
-            "name": name, "qty": qty,
+            "name": name, "qty": qty, "size": size,
             "status": old["status"] if old else "new",
             "is_new": old is None,
             "allergens": meta["allergens"], "veg": meta["veg"],
@@ -413,7 +414,8 @@ async def api_pay(table: str, amount: float = None):
     kds_data.record_payment(table, amt, ref)
     return {"table": table, "amount": round(amt, 2), "upi_url": url, "ref": ref,
             "qr": "/api/pay/{}/qr?amount={}&ref={}".format(table, amt, ref),
-            "vpa": config.UPI_VPA, "payee": config.UPI_PAYEE_NAME}
+            "vpa": settings.get("upi_vpa", config.UPI_VPA),
+            "payee": settings.get("upi_payee", config.UPI_PAYEE_NAME)}
 
 
 @app.get("/api/pay/{table}/qr")
@@ -481,15 +483,6 @@ async def api_service_clear(table: str):
     return {"ok": True}
 
 
-@app.post("/api/broadcast")
-async def api_broadcast(body: dict):
-    """Manager pushes one message to every table's ePaper."""
-    msg = str(body.get("message", "")).strip()
-    if _mqtt is not None:
-        _mqtt.publish("lumina/broadcast", msg, retain=True)
-    return {"ok": True, "message": msg}
-
-
 @app.get("/api/settings")
 async def api_settings_get():
     s = settings.all_settings()
@@ -504,7 +497,11 @@ async def api_settings_get():
 
 @app.post("/api/settings")
 async def api_settings_set(body: dict):
-    return {"ok": True, "settings": settings.save(body)}
+    saved = settings.save(body)
+    if "assistant_state" in body and _mqtt is not None:
+        # tell the panels so they can show/hide the mute badge
+        _mqtt.publish("lumina/assistant", saved["assistant_state"], retain=True)
+    return {"ok": True, "settings": saved}
 
 
 @app.post("/api/settings/test")

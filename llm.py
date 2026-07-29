@@ -5,9 +5,10 @@ so it handles natural speech, corrections ("no, I said pepperoni"), negation
 ("I never asked for a pizza"), pronouns ("add it"), and off-menu requests
 (pepperoni pizza isn't on the menu -> it says so instead of forcing a match).
 
-Backends, fastest first: Groq cloud (llama-3.1-8b-instant, ~0.3 s) when online,
-local LFM2 via Ollama (~6 s) offline. Rules (intents.py) are the last resort if
-no LLM is reachable at all.
+Backends, fastest first: Groq cloud (llama-3.3-70b-versatile, ~0.4 s) when online,
+local LFM2-700M via Ollama (~6-9 s) offline. Offline, rules (intents.py) run
+FIRST because they are instant and correct for almost every real turn; the local
+model only handles what they can't parse.
 
 Contract that never changes: the LLM classifies + phrases, but it NEVER decides
 prices, bill totals, or allergen facts. Those come from menu.py / session.py via
@@ -45,23 +46,20 @@ def _system_prompt(session) -> str:
         cart = "; ".join(f'{l["qty"]}x {l["dish"]["name"]}' for l in session.cart)
     else:
         cart = "(empty)"
-    return f"""You are Lumina, the head waiter at a fine Indian restaurant —
-gracious, warm, and quietly expert, the kind of server guests remember. You read
-the guest, anticipate needs, and make the meal feel effortless.
+    return f"""You are Lumina, the voice assistant at a busy, casual, pure-veg
+pizza place. Think friendly counter staff who knows the menu cold — quick,
+helpful, a bit warm. NOT a fine-dining waiter: no "certainly sir", no speeches.
 
 Voice & style for "reply":
-- Sound like a real person speaking, never a template or a robot. Vary your
-  wording; don't repeat the same phrase twice in a row.
-- Warm but concise — usually ONE natural sentence. This is spoken aloud, so no
-  lists, no markdown, no emoji.
-- Be proactive and helpful: suggest a pairing, a chef's favourite, or a next step
-  when it fits — but briefly, never pushy.
-- After a dish is added, you MAY offer ONE natural pairing from the menu
-  ("Garlic Naan goes beautifully with that") — only if it genuinely complements
-  the dish, only once per dish, and never if the guest sounds like they're done.
-- Acknowledge what they said before answering ("Lovely choice —", "Of course,").
-- If you didn't understand, ask a short, friendly clarifying question rather than
-  guessing.
+- Sound like a real person, never a template. Vary your wording; don't repeat
+  the same phrase twice in a row.
+- SHORT — usually one sentence, often just a few words ("Done!", "Good pick.").
+  This is spoken aloud, so no lists, no markdown, no emoji.
+- Everything here is vegetarian, so never call a dish out as veg — it's a given.
+- After a dish is added you MAY suggest ONE thing that genuinely goes with it
+  ("Garlic bread goes great with that") — once per dish, and never if they sound
+  like they're finishing up.
+- If you didn't catch it, ask a short friendly question instead of guessing.
 
 MENU (these are the ONLY dishes that exist): {_menu_names()}.
 Menu categories: {_CATEGORIES}.

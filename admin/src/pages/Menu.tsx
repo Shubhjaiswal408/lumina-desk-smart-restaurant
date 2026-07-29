@@ -54,7 +54,7 @@ export default function Menu() {
       <header className="flex items-center gap-4 mb-5">
         <div>
           <h1 className="font-display text-3xl font-semibold tracking-tight">Menu</h1>
-          <p className="text-sm text-muted-foreground">{items.length} dishes · add, edit prices, 86 items</p>
+          <p className="text-sm text-muted-foreground">{items.length} dishes · add dishes, edit prices, mark sold out</p>
         </div>
         <Input placeholder="Search dishes…" value={filter} onChange={(e) => setFilter(e.target.value)}
           className="ml-auto max-w-xs" />

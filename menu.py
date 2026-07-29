@@ -38,7 +38,7 @@ def _pizza(name, r, m, l, ings, aliases=(), allergens=None, desc="", cat="Pizza"
 
 MENU = [
     # ------------------------------------------------------- VALUE PIZZA ----
-    _pizza("Margherita", 89, 220, 270, ["Amul mozzarella"],
+    _pizza("Margherita", 89, 220, 270, [],          # base already has the cheese
            ["margherita", "margarita", "plain pizza"],
            desc="Margherita Magic, 100% Amul mozzarella"),
 
@@ -492,6 +492,24 @@ def default_size(dish: dict):
     """The size we assume when the guest doesn't say one (cheapest/base)."""
     s = size_names(dish)
     return s[0] if s else None
+
+
+# Not every "size" is a size. Pizzas and fries come in Regular/Medium/Large,
+# but a momo's option is how it's cooked and a burger's is which cheese.
+_TRUE_SIZES = {"regular", "medium", "large", "small"}
+
+
+def label_for(dish: dict, size=None) -> str:
+    """How the dish should read on a screen or in Lumina's mouth.
+
+    "Large Margherita" — a real size leads, like a waiter would say it.
+    "Mix Veg. Momo (Gravy)" — a variant trails, because "Gravy Mix Veg. Momo"
+    is not something anybody says.
+    """
+    name = dish["name"]
+    if not size:
+        return name
+    return f"{size} {name}" if size.lower() in _TRUE_SIZES else f"{name} ({size})"
 
 
 def price_for(dish: dict, size=None) -> int:

@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { getPay, getPayments, useKitchen, type PayInfo, type Payment } from "@/lib/api"
+import { getPay, getPayments, getToken, useKitchen, type PayInfo, type Payment } from "@/lib/api"
 
 const when = (ts: number | null) =>
   ts ? new Date(ts * 1000).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"
@@ -70,7 +70,10 @@ export default function Payments() {
 
             {pay ? (
               <div className="flex flex-wrap gap-6 items-start">
-                <img src={pay.qr} alt="UPI QR" className="size-52 rounded-lg bg-white p-2" />
+                {/* <img> can't send the auth header, so the token rides along in
+                    the query string (the guard accepts either). */}
+                <img src={`${pay.qr}&token=${encodeURIComponent(getToken())}`}
+                  alt="UPI QR" className="size-52 rounded-lg bg-white p-2" />
                 <div className="flex-1 min-w-64 space-y-3 text-sm">
                   <div>
                     <div className="text-xs text-muted-foreground">Amount encoded</div>

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 
 export type Item = {
-  name: string; qty: number; status: string; is_new: boolean
+  name: string; qty: number; size?: string; status: string; is_new: boolean
   allergens: string[]; veg: boolean; category: string; prep: number
 }
 export type Order = {
@@ -22,7 +22,7 @@ export type Analytics = {
   peak_hour: string; peak_hour_orders: number
 }
 export type HistoryOrder = {
-  id: number; table: string; items: { name: string; qty: number }[]
+  id: number; table: string; items: { name: string; qty: number; size?: string }[]
   total: number; created: number; served_at: number
 }
 
@@ -34,6 +34,12 @@ export type Payment = {
   ref: string; tbl: string; amount: number; status: string
   created: number; settled_at: number | null
 }
+
+// Mirrors menu.label_for on the Pi: a real size leads ("Large Margherita"),
+// anything else trails ("Classic Aloo Tikki Burger (Amul Cheese Slice)").
+const TRUE_SIZES = new Set(["regular", "medium", "large", "small"])
+export const dishLabel = (name: string, size?: string) =>
+  !size ? name : TRUE_SIZES.has(size.toLowerCase()) ? `${size} ${name}` : `${name} (${size})`
 
 // --- auth (staff PIN) ---
 export const getToken = () => localStorage.getItem("lumina_token") || ""
@@ -103,6 +109,14 @@ export function useKitchen() {
   useEffect(() => {
     let ws: WebSocket
     let stop = false
+
+    // Paint from a plain fetch first: the socket can take a moment (or be
+    // blocked entirely, e.g. a headless browser), and staff shouldn't stare at
+    // an empty board while it negotiates.
+    j("/api/state").then((m) => {
+      if (!stop && m?.orders) { setOrders(m.orders); setNow(m.now); setTables(m.tables || []) }
+    }).catch(() => {})
+
     const connect = () => {
       ws = new WebSocket(`ws://${location.host}/ws?token=${encodeURIComponent(getToken())}`)
       ws.onopen = () => setConnected(true)

@@ -82,7 +82,9 @@ def _handle_button(key: str, tbl, client):
 
     elif key == "2":
         now_muted = settings.get("assistant_state") != "muted"
-        settings.save({"assistant_state": "muted" if now_muted else "active"})
+        state = "muted" if now_muted else "active"
+        settings.save({"assistant_state": state})
+        client.publish(mqtt_bus.T_ASSISTANT, state, retain=True)
         print(f"  [button] assistant {'muted' if now_muted else 'unmuted'}", flush=True)
         if not now_muted:                 # speak only when turning sound back on
             speak("I'm listening again.")

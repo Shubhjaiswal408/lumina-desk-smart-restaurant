@@ -1,10 +1,10 @@
 import { useEffect, useRef } from "react"
 import { Bell, CreditCard, Wifi, WifiOff, Utensils, TriangleAlert, RotateCcw,
-  BrushCleaning, CalendarCheck, X, HandPlatter, Megaphone } from "lucide-react"
+  BrushCleaning, CalendarCheck, X, HandPlatter } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { useKitchen, post, type Order, type Item, type TableInfo } from "@/lib/api"
+import { useKitchen, post, dishLabel, type Order, type Item, type TableInfo } from "@/lib/api"
 
 function chime() {
   try {
@@ -40,7 +40,7 @@ function ItemRow({ o, i }: { o: Order; i: Item }) {
         <span className={`absolute inset-[3px] rounded-full ${i.veg ? "bg-emerald-500" : "bg-red-500"}`} />
       </span>
       <span className="font-bold text-red-500 w-7">{i.qty}×</span>
-      <span className="font-medium flex-1">{i.name}</span>
+      <span className="font-medium flex-1">{dishLabel(i.name, i.size)}</span>
       {i.allergens.length > 0 && (
         <span className="flex items-center gap-1 text-[11px] text-red-500">
           <TriangleAlert className="size-3" />{i.allergens.join(", ")}
@@ -50,8 +50,6 @@ function ItemRow({ o, i }: { o: Order; i: Item }) {
     </button>
   )
 }
-
-const BROADCASTS = ["Today's Special", "Happy Hour", "Kitchen Closed", "Festival Offer"]
 
 const STATE_STYLE: Record<string, string> = {
   occupied: "bg-primary/15 text-primary border-primary/40",
@@ -122,17 +120,6 @@ export default function Kitchen() {
       </header>
 
       <TableBoard tables={tables} />
-
-      {/* Manager broadcast — one message to every table's ePaper */}
-      <div className="flex flex-wrap items-center gap-2 mb-5">
-        <Megaphone className="size-4 text-muted-foreground" />
-        {BROADCASTS.map((b) => (
-          <Button key={b} size="sm" variant="secondary"
-            onClick={() => post("/api/broadcast", { message: b })}>{b}</Button>
-        ))}
-        <Button size="sm" variant="ghost" className="text-muted-foreground"
-          onClick={() => post("/api/broadcast", { message: "" })}>Clear</Button>
-      </div>
 
       <div className="space-y-2 mb-5">
         {/* Guest asked for water / napkin / cutlery — staff must deliver it */}

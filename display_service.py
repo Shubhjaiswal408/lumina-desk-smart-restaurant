@@ -19,11 +19,11 @@ from display import _pack
 from session import Session
 
 
-def _render_packed(data: dict, kitchen=None, broadcast=None) -> bytes:
+def _render_packed(data: dict, kitchen=None) -> bytes:
     session = Session.from_items(data.get("items", []))
     img = ui_render.render_order(session, table=data.get("table", "07"),
                                  status=data.get("status", "Listening"),
-                                 kitchen=kitchen, broadcast=broadcast)
+                                 kitchen=kitchen)
     return _pack(ui_render.to_epaper(img))
 
 
@@ -33,8 +33,7 @@ def run_wifi():
     # order; when it acks (or times out) we send the newest state. The panel thus
     # always converges to the current order instead of falling behind.
     st = {"pending": None, "sent": None, "busy": False, "sent_at": 0.0,
-          "order": None, "kitchen": None, "pay": None, "paid": False,
-          "broadcast": None}
+          "order": None, "kitchen": None, "pay": None, "paid": False}
     BUSY_TIMEOUT = 35.0
 
     def _rerender():
@@ -47,7 +46,7 @@ def run_wifi():
                 vpa=st["pay"].get("vpa", ""), paid=st["paid"])
             st["pending"] = _pack(ui_render.to_epaper(img))
         elif st["order"] is not None:
-            st["pending"] = _render_packed(st["order"], st["kitchen"], st["broadcast"])
+            st["pending"] = _render_packed(st["order"], st["kitchen"])
 
     def _send(client, frame):
         st["sent"] = frame
@@ -78,11 +77,6 @@ def run_wifi():
                 st["kitchen"] = None        # a fresh order clears old kitchen status
                 _rerender()
                 _maybe_send(client)
-            elif msg.topic == "lumina/broadcast":
-                st["broadcast"] = msg.payload.decode().strip() or None
-                _rerender()
-                _maybe_send(client)
-                print(f"[display-service] broadcast: {st['broadcast']!r}", flush=True)
             elif msg.topic == mqtt_bus.T_PAY:
                 if not msg.payload.strip():          # cleared after checkout
                     st["pay"], st["paid"] = None, False
@@ -99,6 +93,10 @@ def run_wifi():
                     print("[display-service] payment confirmed -> thank-you screen", flush=True)
                 elif not msg.payload.strip():
                     st["paid"] = False
+            elif msg.topic == mqtt_bus.T_ASSISTANT:
+                _rerender()                 # mute badge appears/disappears
+                _maybe_send(client)
+                print(f"[display-service] assistant {msg.payload.decode()}", flush=True)
             elif msg.topic == mqtt_bus.T_KITCHEN:
                 st["kitchen"] = msg.payload.decode()
                 _rerender()
@@ -116,7 +114,8 @@ def run_wifi():
 
     client = mqtt_bus.make_client("display-service", on_message=on_message)
     for t in (mqtt_bus.T_ORDER, mqtt_bus.T_KITCHEN, mqtt_bus.T_PAY,
-              mqtt_bus.T_PAID, mqtt_bus.T_PANEL, mqtt_bus.T_ACK, "lumina/broadcast"):
+              mqtt_bus.T_PAID, mqtt_bus.T_PANEL, mqtt_bus.T_ACK,
+              mqtt_bus.T_ASSISTANT):
         client.subscribe(t)
     print("[display-service] WiFi mode: streaming frames over MQTT (Ctrl-C to stop)")
     _idle(client)

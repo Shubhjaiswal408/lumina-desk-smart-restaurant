@@ -37,7 +37,7 @@ def handle(result: dict, session: Session) -> str:
         if not items:
             dish = result.get("dish") or session.last_dish
             if not dish:
-                return "Sure — which dish would you like me to add?"
+                return "Sure — what would you like?"
             items = [{"dish": dish, "quantity": result.get("quantity", 1)}]
 
         added, total, unavailable, assumed = [], 0, [], []
@@ -52,14 +52,14 @@ def handle(result: dict, session: Session) -> str:
             if menu.size_names(dish) and not it.get("size"):
                 assumed.append(dish)
             session.add_dish(dish, it["quantity"], size)
-            label = f"{size} {dish['name']}" if size else dish["name"]
+            label = menu.label_for(dish, size)
             added.append(f"{it['quantity']} {label}")
             total += it["quantity"] * menu.price_for(dish, size)
         if added:
             session.last_dish = items[-1]["dish"]
 
         if not added:
-            return f"I'm so sorry, the {unavailable[0]} is finished for today. Could I suggest something else?"
+            return f"Ah, the {unavailable[0]} is finished for today — want something else?"
         summary = added[0] if len(added) == 1 else ", ".join(added[:-1]) + " and " + added[-1]
         note = ""
         if unavailable:
@@ -73,16 +73,16 @@ def handle(result: dict, session: Session) -> str:
     if intent == "remove":
         dish = result.get("remove_dish") or result.get("dish") or session.last_dish
         if not dish:
-            return "Which item would you like me to remove?"
+            return "Which one should I take off?"
         # "remove one naan" drops just one; "remove the naan" drops the whole line.
         qty = result.get("quantity", 0) if result.get("qty_explicit") else 0
         if qty and qty > 0:
             ok = session.decrement_dish(dish, qty)
             return (f"Done — {qty} {dish['name']} removed. Anything else?" if ok
-                    else f"No problem — you don't have {dish['name']} on your order.")
+                    else f"You don't have {dish['name']} on the order.")
         if session.remove_dish(dish):
-            return f"Done — I've removed the {dish['name']} from your order. Anything else?"
-        return f"No problem — you don't have {dish['name']} on your order."
+            return f"Taken off the {dish['name']}. Anything else?"
+        return f"You don't have {dish['name']} on the order."
 
     if intent == "replace":
         old, new = result.get("remove_dish"), result.get("dish")
@@ -93,20 +93,20 @@ def handle(result: dict, session: Session) -> str:
             session.add_dish(new, result.get("quantity", 1), size)
             session.last_dish = new
             price = menu.price_for(new, size)
-            label = f"{size} {new['name']}" if size else new["name"]
-            msg = f"My apologies — {label} it is, {price} rupees."
+            label = menu.label_for(new, size)
+            msg = f"Got it — {label}, {price} rupees."
             if old:
-                msg = f"Sorry about that. I've swapped it for {label}, {price} rupees."
+                msg = f"Swapped it for {label}, {price} rupees."
             return msg + " Anything else?"
-        return "Certainly — what would you like instead?"
+        return "No problem — what instead?"
 
     if intent == "request_item":
         item, qty = result.get("item"), result.get("quantity", 1)
-        return f"Sure, I'll ask a server to bring {qty} {item} to your table right away."
+        return f"Sure, {qty} {item} coming to your table."
 
     if intent == "check_bill":
         if session.is_empty():
-            return "Your order is empty right now. What would you like to start with?"
+            return "Nothing on the order yet. What can I get you?"
         mode = menu.tax_config()[0]
         if mode == "exclusive":
             return (
@@ -120,7 +120,7 @@ def handle(result: dict, session: Session) -> str:
 
     if intent == "split_bill":
         if session.is_empty():
-            return "There's nothing to split yet. Shall I show you the menu?"
+            return "Nothing to split yet — want me to run through the menu?"
         ways = result.get("ways", 2)
         each = session.total() / ways
         return f"Splitting {session.total():.0f} rupees {ways} ways comes to {each:.0f} rupees each."
@@ -128,27 +128,28 @@ def handle(result: dict, session: Session) -> str:
     if intent == "ask_ingredient":
         dish = result.get("dish") or session.last_dish
         if not dish:
-            return "Which dish would you like to know about?"
+            return "Which one do you mean?"
         session.last_dish = dish
         ings = dish.get("ingredients") or []
-        if not ings:   # e.g. a newly added dish with no ingredients filled in
-            alg = (f" It does contain {', '.join(dish['allergens'])}."
+        if not ings:   # e.g. a dish added from the console with no recipe yet
+            alg = (f" It does have {', '.join(dish['allergens'])} in it."
                    if dish.get("allergens") else "")
-            return (f"The {dish['name']} is {_diet(dish)}.{alg} "
-                    f"I can check the full recipe with the kitchen if you'd like.")
-        return f"The {dish['name']} is {_diet(dish)}. It contains {', '.join(ings)}."
+            return (f"I don't have the full recipe for the {dish['name']}.{alg} "
+                    f"Want me to check with the kitchen?")
+        return f"{dish['name']}: {', '.join(ings)}."
 
     if intent == "ask_allergen":
         dish = result.get("dish") or session.last_dish
         if not dish:
-            return "Which dish should I check for allergens?"
+            return "Which one should I check?"
         session.last_dish = dish
         if dish["allergens"]:
             return (
-                f"Please note: the {dish['name']} contains {', '.join(dish['allergens'])}. "
-                f"If your allergy is serious, I can call a server to confirm with the kitchen."
+                f"Heads up — the {dish['name']} contains {', '.join(dish['allergens'])}. "
+                f"If it's a serious allergy I'll get someone from the kitchen to confirm."
             )
-        return f"The {dish['name']} has no common allergens listed, but I can confirm with the kitchen if you'd like."
+        return (f"No common allergens listed for the {dish['name']}. "
+                f"I can double-check with the kitchen if you'd like.")
 
     if intent == "recommend":
         if result.get("dish"):
@@ -157,20 +158,20 @@ def handle(result: dict, session: Session) -> str:
             return llm_reply
         picks = [p for p in menu.CHEF_SPECIALS if menu.find_dish(p)][:3]
         session.last_dish = menu.find_dish(picks[0]) if picks else None
-        return (f"Our guests love {', '.join(picks)}. "
-                f"The {picks[0]} is always a good shout. Shall I add it?"
-                if picks else "What sort of thing are you in the mood for?")
+        return (f"{picks[0]} is our most-ordered — {' and '.join(picks[1:])} go fast too. "
+                f"Want the {picks[0]}?"
+                if picks else "What are you in the mood for?")
 
     if intent == "clear_cart":
         if session.is_empty():
-            return "Your order's already empty. What can I get started for you?"
+            return "It's already empty. What can I get you?"
         session.clear()
-        return "Done — I've cleared your order. Let's start fresh; what would you like?"
+        return "Cleared. What would you like?"
 
     if intent == "show_category":
         cat = result.get("category")
         if not cat:
-            return "Which section — starters, mains, breads, rice, desserts, or drinks?"
+            return "Which one — pizzas, garlic bread, burgers, momos, fries, or drinks?"
         dishes = menu.by_category(cat)
         def _q(d):
             base = menu.price_for(d, menu.default_size(d))
@@ -179,7 +180,7 @@ def handle(result: dict, session: Session) -> str:
         more = f" and {len(dishes) - 8} more" if len(dishes) > 8 else ""
         label = {"Starter": "starters", "Main": "mains", "Bread": "breads",
                  "Rice": "rice dishes", "Dessert": "desserts", "Beverage": "drinks"}.get(cat, cat.lower())
-        return f"In {label} we have {names} rupees{more}. Shall I add any of those?"
+        return f"In {label}: {names} rupees{more}. Want any of those?"
 
     if intent == "show_menu":
         pizzas = ", ".join(d["name"] for d in menu.by_category("Pizza")[:3])
@@ -191,7 +192,7 @@ def handle(result: dict, session: Session) -> str:
 
     if intent == "call_staff":
         session.staff_called = True
-        return llm_reply or "Of course. I've alerted a server, someone will be with you shortly."
+        return llm_reply or "Done — someone's on their way."
 
     if intent == "pay":
         if session.is_empty():
@@ -206,8 +207,8 @@ def handle(result: dict, session: Session) -> str:
 
     if intent == "end":
         if not session.is_empty():
-            return f"Wonderful. Your total is {session.total():.0f} rupees. Enjoy your meal, and just say Hey Lumina if you need anything."
-        return "Of course. Just say Hey Lumina whenever you need me. Enjoy!"
+            return f"That's {session.total():.0f} rupees. Enjoy — just say Hey Lumina if you need anything."
+        return "Cool — say Hey Lumina whenever you need me."
 
     # smalltalk / unknown
     return llm_reply or (
