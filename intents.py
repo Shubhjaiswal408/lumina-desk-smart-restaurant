@@ -140,6 +140,14 @@ def parse_intent(text: str) -> dict:
         if d:
             return {"intent": "ask_price", "text": text, "dish": d,
                     "size": menu.find_size(t, d) or ""}
+        # A price question we couldn't pin to a dish — usually a misheard name.
+        # Ask which one. Reading the guest their bill instead would be a
+        # confident answer to a question they didn't ask.
+        if not has("bill", "total", "owe", "the check", "altogether", "in all"):
+            cat = menu.find_category(t)
+            if cat:
+                return {"intent": "show_category", "text": text, "category": cat}
+            return {"intent": "ask_price", "text": text, "dish": None}
 
     # Bill
     if has("bill", "total", "how much", "what do i owe", "check please", "the check"):
@@ -157,6 +165,14 @@ def parse_intent(text: str) -> dict:
     diet = word("vegetarian", "vegan", "eggless", "jain") or has("non veg", "nonveg", "non-veg")
     if asking or (diet and _QUESTION.search(t)):
         return {"intent": "ask_ingredient", "text": text, "dish": menu.find_dish(t)}
+
+    # A whole section: "what momos do you have", or just "momos". Naming a
+    # category is not enough to order — there are sixteen momos — so read the
+    # section back instead of silently picking one.
+    if menu.find_dish(t) is None:
+        cat = menu.find_category(t)
+        if cat:
+            return {"intent": "show_category", "text": text, "category": cat}
 
     # Menu
     if has("menu", "what do you have", "what can i", "options", "specials", "recommend", "suggest"):

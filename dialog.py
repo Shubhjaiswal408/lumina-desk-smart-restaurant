@@ -197,8 +197,11 @@ def handle(result: dict, session: Session) -> str:
             return f"{d['name']} from {base}" if menu.size_names(d) else f"{d['name']} at {base}"
         names = ", ".join(_q(d) for d in dishes[:8])
         more = f" and {len(dishes) - 8} more" if len(dishes) > 8 else ""
-        label = {"Starter": "starters", "Main": "mains", "Bread": "breads",
-                 "Rice": "rice dishes", "Dessert": "desserts", "Beverage": "drinks"}.get(cat, cat.lower())
+        label = {"Starter": "starters", "Dessert": "desserts", "Beverage": "drinks",
+                 "Mocktail": "mocktails", "Momo": "momos", "Burger": "burgers",
+                 "Pizza": "pizzas", "Calzone": "calzones", "Calizza": "calizzas",
+                 "Parcel": "parcels", "Farali": "the farali menu",
+                 "Fries": "fries", "Garlic Bread": "garlic breads"}.get(cat, cat.lower())
         return f"In {label}: {names} rupees{more}. Want any of those?"
 
     if intent == "show_menu":

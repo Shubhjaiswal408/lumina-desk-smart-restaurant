@@ -65,6 +65,8 @@ built around the ways they actually fail:
 | **The internet dies mid-service** | Offline mode makes **zero network calls** — wake word, speech recognition, understanding, speech and display all run on the Pi. |
 | **Offline is unusably slow** | A 700M model on a Pi CPU needs ~9 s. So a **rule parser runs first** — instant and reliably right for the handful of things guests actually say. It also answers fact questions *online*, because their reply is computed from the menu regardless. See [How fast, measured](#how-fast-measured). |
 | **"What's the price of a paneer momo?"** | Answered, not ordered. A question about a dish used to put it in the cart — the fastest way to bill someone for something they never asked for. |
+| **"Two cold coffee**s**"** | Understood. A strict word boundary used to reject the plural, so the dish silently never made it onto the order — and guests speak in plurals constantly. |
+| **A name comes through slightly wrong** | "Momo" is a section, not a dish. Naming one gets the section read back ("we have sixteen momos, here they are") instead of a confident guess at which one you meant. |
 | **The guest doesn't speak English** | Whatever language they use, Lumina replies in it. |
 | **A shy guest, or a very loud room** | Three physical buttons on the panel: call a waiter, show the bill, mute. |
 | **The next party inherits the last bill** | The table has a lifecycle. Payment banks the order, clears the ticket, resets the voice session and flips the table to *cleaning*. |
@@ -525,9 +527,14 @@ docs/images/        the screenshots in this README
 
 ```bash
 ./venv/bin/python tests/test_offline.py    # correctness, ~2 s, no hardware
+./venv/bin/python tests/test_live.py       # a whole guest journey, end to end
 ./venv/bin/python tools_bench.py           # latency, per stage
 ./venv/bin/python ui_render.py             # regenerate the ePaper images
 ```
+
+`test_live.py` is the honest check that a build works: it speaks five lines,
+hears them back through the real speech recogniser, and then verifies the cart,
+the kitchen board and the ePaper panel all agree — online and offline.
 
 Regenerate the ePaper images any time with `./venv/bin/python ui_render.py`.
 

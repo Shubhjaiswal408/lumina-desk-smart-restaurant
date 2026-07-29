@@ -273,7 +273,7 @@ MENU = [
     _d("Spicy Chilly Potato", 159, "Starter", ["potato", "chilli sauce", "capsicum", "onion"], ["gluten", "soy"], ["spicy chilly potato", "chilli potato"], prep=12, desc="350 gm"),
 
     # ------------------------------------------------------ FRENCH FRIES ----
-    _d("Salted Fries", 90, "Fries", ["potato fries", "salt"], [], ["salted fries", "french fries", "fries"],
+    _d("Salted Fries", 90, "Fries", ["potato fries", "salt"], [], ["salted fries", "plain fries"],
        sizes={"Medium": 90, "Large": 120}, prep=8),
     _d("Peri-Peri Fries", 110, "Fries", ["potato fries", "peri-peri seasoning"], [], ["peri peri fries"],
        sizes={"Medium": 110, "Large": 150}, prep=8),
@@ -327,7 +327,7 @@ MENU = [
 
     # -------------------------------------------------------------- MOMO ----
     # sizes = cooking style
-    _d("Mix Veg. Momo", 80, "Momo", ["flour wrapper", "mixed vegetables", "spices"], ["gluten"], ["mix veg momo", "veg momo", "momo"],
+    _d("Mix Veg. Momo", 80, "Momo", ["flour wrapper", "mixed vegetables", "spices"], ["gluten"], ["mix veg momo", "veg momo"],
        sizes={"Steam": 80, "Pan Fry": 90, "Deep Fry": 110, "Gravy": 120}, prep=12, desc="6 pieces"),
     _d("Spicy Veg. Momo", 90, "Momo", ["flour wrapper", "mixed vegetables", "chilli"], ["gluten"], ["spicy veg momo"],
        sizes={"Steam": 90, "Pan Fry": 100, "Deep Fry": 120, "Gravy": 130}, prep=12, desc="6 pieces"),
@@ -389,7 +389,7 @@ MENU = [
     # ---------------------------------------------------------- DESSERTS ----
     _d("Choco Lava Cake", 99, "Dessert", ["chocolate cake", "molten chocolate centre"], ["gluten", "dairy", "egg"], ["choco lava cake", "lava cake"], prep=6),
     _d("Choco Lava Cake x2", 149, "Dessert", ["chocolate cake", "molten chocolate centre"], ["gluten", "dairy", "egg"], ["two choco lava cakes", "choco lava cake x2"], prep=6),
-    _d("Hot Brownie", 99, "Dessert", ["chocolate brownie", "cocoa", "butter"], ["gluten", "dairy", "egg"], ["hot brownie", "brownie"], prep=6, desc="2 pieces, 100 gm"),
+    _d("Hot Brownie", 99, "Dessert", ["chocolate brownie", "cocoa", "butter"], ["gluten", "dairy", "egg"], ["hot brownie"], prep=6, desc="2 pieces, 100 gm"),
 ]
 
 # ---------------------------------------------------------------- config --
@@ -416,10 +416,25 @@ def prep_minutes(dish: dict) -> int:
     return dish.get("prep", 12)
 
 
+import re as _re
+
+# Compiled once per alias. find_dish tests every alias of every dish, so this
+# runs a few hundred times a turn and rebuilding the pattern each time showed up.
+_alias_re: dict = {}
+
+
 def _alias_matches(text: str, alias: str) -> bool:
-    """Whole-phrase match so 'corn' alone doesn't hijack 'Golden Corn'."""
-    import re
-    return re.search(rf"(?<![a-z]){re.escape(alias)}(?![a-z])", text) is not None
+    """Whole-phrase match so 'corn' alone doesn't hijack 'Golden Corn'.
+
+    A trailing plural is allowed: guests say "two cold coffees" and "three
+    margheritas" far more often than the singular, and a strict word boundary
+    used to reject both — the dish simply never made it onto the order.
+    """
+    rx = _alias_re.get(alias)
+    if rx is None:
+        rx = _alias_re[alias] = _re.compile(
+            rf"(?<![a-z]){_re.escape(alias)}(?:e?s)?(?![a-z])")
+    return rx.search(text) is not None
 
 
 # --- Live admin overrides (price / availability) from the KDS SQLite DB ---

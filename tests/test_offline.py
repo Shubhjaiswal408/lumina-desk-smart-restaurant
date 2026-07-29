@@ -72,6 +72,18 @@ order("how much is a margherita", [])
 intent("what's my bill", "check_bill")
 intent("what do i owe", "check_bill")
 
+print("\nA category is a question, not a dish")
+# "momo" used to be an alias of Mix Veg. Momo, so a slightly-misheard "paneer
+# momo" silently quoted (or ordered) a different dish. There are sixteen momos —
+# naming the section should read the section back.
+check(menu.find_dish("momo") is None, "'momo' alone doesn't resolve to one dish")
+check(menu.find_dish("fries") is None, "'fries' alone doesn't resolve to one dish")
+check(menu.find_dish("paneer momo")["name"] == "Paneer Momo", "a named momo still works")
+check(menu.find_dish("salted fries")["name"] == "Salted Fries", "a named fries still works")
+intent("momo", "show_category")
+intent("what pizzas do you have", "show_category")
+order("momo", [])
+
 print("\nWhisper prompt fits Groq's limit")
 import stt                                                        # noqa: E402
 prompt = stt._stt_prompt()
@@ -100,6 +112,14 @@ order("two corn and cheese garlic bread", [("Corn & Cheese Garlic Bread", 2)])
 order("veg and paneer zingy parcel", [("Veg. & Paneer Zingy Parcel", 1)])
 # "with" introduces a modifier, not a second dish.
 order("one margherita with extra cheese", [("Regular Margherita", 1)])
+
+print("\nGuests speak in plurals")
+# A strict word boundary rejected the trailing "s", so "two cold coffees" put
+# nothing on the order at all.
+order("two cold coffees", [("Cold Coffee", 2)])
+order("three margheritas", [("Regular Margherita", 3)])
+order("two paneer momos", [("Paneer Momo (Steam)", 2)])
+check(menu.find_dish("burgers") is None, "a plural category is still a category")
 
 print("\nSizes and labels")
 order("i want a paneer momo in gravy and one peri peri fries large",
