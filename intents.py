@@ -18,6 +18,13 @@ _NUM_WORDS = {
 }
 
 
+# Offline speech recognition hears "two" as "to" or "too" almost every time, and
+# a quantity that quietly becomes 1 is a wrong bill. Only trust the homophone at
+# the very start of a clause — that is where a count goes ("too cold coffees"),
+# and it keeps "not too spicy" from ordering a second pizza.
+_TWO_HOMOPHONE = re.compile(r"^(?:to|too)\b")
+
+
 def _quantity(text: str) -> int:
     m = re.search(r"\b(\d+)\b", text)
     if m:
@@ -25,6 +32,8 @@ def _quantity(text: str) -> int:
     for word, n in _NUM_WORDS.items():
         if re.search(rf"\b{word}\b", text):
             return n
+    if _TWO_HOMOPHONE.match(text.strip()):
+        return 2
     return 1
 
 

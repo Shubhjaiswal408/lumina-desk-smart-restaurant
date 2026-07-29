@@ -121,6 +121,16 @@ order("three margheritas", [("Regular Margherita", 3)])
 order("two paneer momos", [("Paneer Momo (Steam)", 2)])
 check(menu.find_dish("burgers") is None, "a plural category is still a category")
 
+print("\nOffline speech recognition hears 'two' as 'too'")
+# Vosk transcribes "two cold coffees" as "too cold coffees" almost every time,
+# and the quantity silently became 1 — a wrong bill, offline, unnoticed.
+order("too cold coffees", [("Cold Coffee", 2)])
+order("one large margarita and too cold coffees",
+      [("Large Margherita", 1), ("Cold Coffee", 2)])
+# ...but only at the start of a clause, where a count actually goes.
+order("one margherita not too spicy", [("Regular Margherita", 1)])
+order("i want to order a margherita", [("Regular Margherita", 1)])
+
 print("\nSizes and labels")
 order("i want a paneer momo in gravy and one peri peri fries large",
       [("Paneer Momo (Gravy)", 1), ("Large Peri-Peri Fries", 1)])

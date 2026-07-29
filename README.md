@@ -557,16 +557,34 @@ firmware/           ESP32 sketches (WiFi panel, USB panel, hardware tests)
 systemd/            service units — everything auto-starts on boot
 training/           Colab notebook to train your own wake word
 tests/              offline-path regression tests (no mic, no network)
+tools_doctor.py     check every backend, including the fallbacks
 tools_bench.py      time every stage of a turn
 tools_shot.py       screenshot the console for these docs
 docs/images/        the screenshots in this README
 ```
 
 ```bash
+./venv/bin/python tools_doctor.py          # is every backend alive?
 ./venv/bin/python tests/test_offline.py    # correctness, ~2 s, no hardware
 ./venv/bin/python tests/test_live.py       # a whole guest journey, end to end
 ./venv/bin/python tools_bench.py           # latency, per stage
 ./venv/bin/python ui_render.py             # regenerate the ePaper images
+```
+
+**Start with `tools_doctor.py`.** It exercises every backend for real — wake
+word, Groq Whisper *and* offline Vosk, the cloud model *and* the local one,
+Piper in each installed voice, espeak, the mic, all five services. The cloud
+paths get used constantly; the offline ones only matter on the day the internet
+dies, which is exactly when you don't want to discover they were broken.
+
+```
+  ok   "Hey Lumina"  — custom model
+  ok   Groq Whisper  — 281 ms — "One large margarita and two cold coffees."
+  ok   Vosk (offline fallback)  — transcribe 1487 ms
+  ok   rule parser (the instant path)  — 39.8 ms
+  ok   local LFM2-700M-GGUF  — 11057 ms
+  ok   Piper generates [en]  — first audio in 301 ms
+  ok   Piper generates [hi]  — first audio in 388 ms
 ```
 
 `test_live.py` is the honest check that a build works: it speaks five lines,
