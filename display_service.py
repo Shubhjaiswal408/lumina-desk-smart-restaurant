@@ -112,11 +112,11 @@ def run_wifi():
         except Exception as e:
             print(f"[display-service] error: {e}")
 
-    client = mqtt_bus.make_client("display-service", on_message=on_message)
-    for t in (mqtt_bus.T_ORDER, mqtt_bus.T_KITCHEN, mqtt_bus.T_PAY,
-              mqtt_bus.T_PAID, mqtt_bus.T_PANEL, mqtt_bus.T_ACK,
-              mqtt_bus.T_ASSISTANT):
-        client.subscribe(t)
+    client = mqtt_bus.make_client(
+        "display-service", on_message=on_message,
+        topics=(mqtt_bus.T_ORDER, mqtt_bus.T_KITCHEN, mqtt_bus.T_PAY,
+                mqtt_bus.T_PAID, mqtt_bus.T_PANEL, mqtt_bus.T_ACK,
+                mqtt_bus.T_ASSISTANT))
     print("[display-service] WiFi mode: streaming frames over MQTT (Ctrl-C to stop)")
     _idle(client)
 
@@ -143,8 +143,8 @@ def run_serial():
                    table=data.get("table", "07"), status=data.get("status", "Listening"))
         print(f"[display-service] update ({len(data.get('items', []))} items)")
 
-    client = mqtt_bus.make_client("display-service", on_message=on_message)
-    client.subscribe(mqtt_bus.T_ORDER)
+    client = mqtt_bus.make_client("display-service", on_message=on_message,
+                                  topics=(mqtt_bus.T_ORDER,))
     print("[display-service] serial mode: driving USB panel (Ctrl-C to stop)")
     try:
         _idle(client)

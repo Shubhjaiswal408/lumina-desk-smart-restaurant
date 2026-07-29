@@ -13,6 +13,7 @@ import json
 import os
 import random
 import struct
+import time
 
 import paho.mqtt.client as mqtt
 
@@ -34,8 +35,14 @@ T_PAID = f"{BASE}/payment"         # "paid" once the money is confirmed
 _COMMIT = 0xFFFFFFFF
 
 
-def make_client(name: str, on_message=None) -> mqtt.Client:
+def make_client(name: str, on_message=None, topics=()) -> mqtt.Client:
     """Create + connect a background-looping client. Works on paho-mqtt 1.x/2.x.
+
+    Pass the topics this client needs; they are (re)subscribed inside on_connect
+    rather than once by the caller. That matters: paho reconnects by itself
+    after the broker restarts, but a reconnected session has NO subscriptions,
+    so a service that subscribed once at startup would come back apparently
+    healthy and never receive another message.
 
     The client id gets a random suffix: MQTT kicks off any existing client with
     the same id, so two copies of a service (e.g. a dev instance next to the
@@ -48,7 +55,31 @@ def make_client(name: str, on_message=None) -> mqtt.Client:
         client = mqtt.Client(client_id=cid)
     if on_message:
         client.on_message = on_message
-    client.connect(config.MQTT_HOST, config.MQTT_PORT, keepalive=60)
+
+    subs = [(t, 0) if isinstance(t, str) else tuple(t) for t in topics]
+
+    def _on_connect(client, userdata, flags, reason_code, properties=None, *a):
+        for topic, qos in subs:
+            client.subscribe(topic, qos)
+        if subs:
+            print(f"[mqtt] {name} subscribed to {len(subs)} topic(s)", flush=True)
+
+    client.on_connect = _on_connect
+    client.reconnect_delay_set(min_delay=1, max_delay=30)
+
+    # The broker may not be up yet — at boot systemd starts us alongside it, and
+    # a service that dies here just thrashes. Keep trying instead.
+    delay = 1
+    while True:
+        try:
+            client.connect(config.MQTT_HOST, config.MQTT_PORT, keepalive=60)
+            break
+        except OSError as e:
+            print(f"[mqtt] {name}: broker unreachable ({e}); retrying in {delay}s",
+                  flush=True)
+            time.sleep(delay)
+            delay = min(delay * 2, 30)
+
     client.loop_start()
     return client
 

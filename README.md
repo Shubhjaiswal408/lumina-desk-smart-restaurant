@@ -345,8 +345,10 @@ arduino-cli compile --upload -p /dev/ttyUSB0 \
   --fqbn 'esp32:esp32:XIAO_ESP32S3:PSRAM=opi,CDCOnBoot=cdc' firmware/display_wifi
 ```
 
-Unplug the USB cable — it runs on battery over WiFi, and finds the Pi by **mDNS**,
-so the Pi's IP address can change without breaking anything.
+Unplug the USB cable — it runs on battery over WiFi. It finds the Pi by **mDNS**
+every time it reconnects, and remembers the last working address in flash, so
+neither a new DHCP lease nor a reboot of either device breaks it. See
+[When things go wrong](#when-things-go-wrong).
 
 ---
 
@@ -419,6 +421,26 @@ one of three ways:
 > **Limitation:** two tables owing the exact same amount at the same moment could
 > mismatch under (1). A real gateway with per-bill references removes that.
 
+### When things go wrong
+
+A panel screwed to a table has no keyboard and nobody watching it, so every
+failure has to repair itself. What each one does:
+
+| What happens | What the system does |
+|---|---|
+| **The Pi gets a new DHCP address** | The panel re-resolves the broker by mDNS on *every* connect attempt, not once at boot. |
+| **mDNS doesn't answer** (some cheap routers drop multicast) | Falls back to the last address that actually worked, saved in the ESP32's flash. Then to the compiled-in fallback. |
+| **The panel boots before the Pi** | It retries with backoff and keeps its buttons responsive the whole time; nothing blocks. |
+| **The Wi-Fi drops** | Retried, then escalated to a full radio restart, then to a reboot after 5 minutes offline. |
+| **The panel firmware wedges** | A 90-second hardware watchdog reboots it. (The timeout is generous because a colour refresh legitimately blocks for ~20 s.) |
+| **The Pi restarts** | Orders live on retained MQTT topics, so the current bill is re-delivered on reconnect. |
+| **Mosquitto restarts** | Every Pi service re-subscribes inside `on_connect`. This one mattered: a reconnected MQTT session has no subscriptions, so services used to come back looking healthy and never receive another message. |
+| **A frame is cut off mid-transfer** | Discarded after 30 s rather than rendered, so a torn image can't end up on the table. |
+| **The panel misses a frame anyway** | It re-announces itself every 60 s; the Pi answers by pushing the current screen. |
+
+Test it the honest way — `sudo systemctl restart mosquitto` while an order is on
+the board, then place another one. It should just work.
+
 ### Table lifecycle
 
 ```
@@ -485,7 +507,8 @@ Regenerate the ePaper images any time with `./venv/bin/python ui_render.py`.
 | Symptom | Cause / fix |
 |---|---|
 | `ALSA input overflow` | Fixed — `audio.py` drains the mic on a background thread. If it returns, another process is holding the card. |
-| Panel stuck on an old screen | Check `journalctl -u lumina-display -f`. The firmware resolves the Pi by mDNS, so an IP change shouldn't matter. |
+| Panel stuck on an old screen | Check `journalctl -u lumina-display -f`. The firmware re-resolves the Pi on every reconnect, so an IP change shouldn't matter — watch the panel's serial output to see which address it settled on. |
+| Panel never connects on a new network | It's trying the address saved in flash. Reflash, or just leave it: mDNS wins as soon as it answers. |
 | Panel blank on first flash | The ePaper ribbon (FPC) isn't seated. `epaper.begin()` will hang on BUSY forever. Reseat it. |
 | ESP32 serial silent | The reTerminal E1002 needs `CDCOnBoot=cdc` in the FQBN to route Serial to the CH340. |
 | `[pay] no pending bill matched` | Payment arrived with no matching open bill, or older than the 45-minute window. |

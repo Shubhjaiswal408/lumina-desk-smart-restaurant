@@ -9,8 +9,6 @@ Run:  ./venv/bin/uvicorn kds_server:app --host 0.0.0.0 --port 8000
 """
 import asyncio
 import json
-import os
-import random
 import secrets
 import subprocess
 import time
@@ -22,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 
 import config
 import kds_data
+import mqtt_bus
 import menu
 import payments
 import settings
@@ -70,7 +69,8 @@ def _bank_order(table: str):
     o["banked"] = True
     try:
         kds_data.record_order(
-            table, [{"name": i["name"], "qty": i["qty"]} for i in o["items"]],
+            table, [{"name": i["name"], "qty": i["qty"], "size": i.get("size", "")}
+                    for i in o["items"]],
             o.get("total", 0), o.get("created", time.time()))
     except Exception as e:
         print(f"[kds] history save failed: {e}", flush=True)
@@ -226,21 +226,14 @@ def _on_mqtt(client, userdata, msg):
 
 def _start_mqtt():
     global _mqtt
-    import paho.mqtt.client as mqtt
-    # Unique id — a second instance with the same id would kick this one off.
-    cid = f"kds-server-{os.getpid()}-{random.randint(1000, 9999)}"
-    try:
-        c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=cid)
-    except (AttributeError, TypeError):
-        c = mqtt.Client(client_id=cid)
-    c.on_message = _on_mqtt
-    c.connect(config.MQTT_HOST, config.MQTT_PORT, 60)
-    c.subscribe("lumina/table/+/order")
-    c.subscribe("lumina/table/+/event")
-    c.subscribe("lumina/table/+/payment")
-    c.loop_start()
-    _mqtt = c
-    return c
+    # make_client waits for the broker and re-subscribes on every reconnect —
+    # without that, a mosquitto restart leaves this board silently frozen.
+    _mqtt = mqtt_bus.make_client("kds-server", on_message=_on_mqtt, topics=(
+        "lumina/table/+/order",
+        "lumina/table/+/event",
+        "lumina/table/+/payment",
+    ))
+    return _mqtt
 
 
 # ---- FastAPI app ----

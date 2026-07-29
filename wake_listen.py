@@ -242,9 +242,9 @@ def main() -> None:
             _handle_button(msg.payload.decode().strip(), tbl, client)
 
     try:
-        _MQTT = mqtt_bus.make_client(f"voice-table-{config.TABLE_ID}", on_message=_on_bus)
-        _MQTT.subscribe(mqtt_bus.T_KITCHEN)
-        _MQTT.subscribe(mqtt_bus.T_BUTTON)
+        _MQTT = mqtt_bus.make_client(
+            f"voice-table-{config.TABLE_ID}", on_message=_on_bus,
+            topics=(mqtt_bus.T_KITCHEN, mqtt_bus.T_BUTTON))
     except Exception as e:
         print(f"  (MQTT bus unavailable: {e})", flush=True)
         _MQTT = None
