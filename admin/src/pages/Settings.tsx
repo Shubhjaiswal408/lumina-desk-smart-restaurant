@@ -164,8 +164,13 @@ export default function SettingsPage() {
             <Input defaultValue={s.upi_payee}
               onBlur={(e) => e.target.value !== s.upi_payee && save({ upi_payee: e.target.value })} />
           </Row>
-          <Row label="Feedback form URL" hint="QR on the thank-you screen. Must be public (e.g. a Google Form)">
-            <Input placeholder="https://forms.gle/…" defaultValue={s.feedback_url}
+          <Row label="Feedback form URL"
+            hint={'QR on the thank-you screen. Must be reachable from a phone on mobile data, ' +
+                  'so use a public form. Tip: in Google Forms use ⋮ → "Get pre-filled link", ' +
+                  'type TABLE as the answer to your table question, and paste that link here — ' +
+                  'every response will say which table it came from.'}>
+            <Input placeholder="https://docs.google.com/forms/…?entry.123456=TABLE"
+              defaultValue={s.feedback_url}
               onBlur={(e) => e.target.value !== s.feedback_url && save({ feedback_url: e.target.value })} />
           </Row>
         </CardContent>

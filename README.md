@@ -477,6 +477,43 @@ failure has to repair itself. What each one does:
 Test it the honest way — `sudo systemctl restart mosquitto` while an order is on
 the board, then place another one. It should just work.
 
+### The feedback QR
+
+The thank-you screen can carry a QR to a feedback form. Set **Settings →
+Feedback form URL** and it appears; leave it blank and the screen stays quiet.
+
+It has to be a **public** link. The guest scans it with their own phone, which is
+usually on mobile data, not your Wi-Fi — a page hosted on the Pi would simply
+fail to load for them. A Google Form is the easy answer.
+
+Make it tell you which table it came from, without the guest typing anything:
+
+1. Build the form, with a short-answer question called **Table**.
+2. **⋮ → Get pre-filled link.**
+3. In the Table box type the literal word `TABLE`. Leave the rest blank.
+4. **Get link → Copy link**, and paste it into Settings.
+
+You'll have pasted something like:
+
+```
+https://docs.google.com/forms/d/e/1FAIpQLSd…/viewform?usp=pp_url&entry.1234567=TABLE
+```
+
+Lumina swaps `TABLE` for the real table number when it draws each screen, so
+table 7's QR and table 11's QR go to the same form with different answers
+already filled in. Only a query value that is exactly `TABLE` is touched — a
+form id containing those letters is left alone. A plain `forms.gle/…` link works
+too, you just won't know which table replied.
+
+Questions worth asking (keep it to four — people are on their way out):
+
+| Question | Type |
+|---|---|
+| Table | Short answer *(the pre-filled one)* |
+| How was the food? | Linear scale 1–5 |
+| How was the service? | Linear scale 1–5 |
+| Anything we should know? | Paragraph, optional |
+
 ### Table lifecycle
 
 ```

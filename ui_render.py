@@ -278,7 +278,9 @@ def _render_thanks(session, table, rupee):
     _header(d, table, "Paid", listening=False)
 
     import settings as _st
-    fb = _st.get("feedback_url", "")
+    # The link carries the table with it, so a response arrives already tagged
+    # with where it came from — nobody has to remember a table number.
+    fb = _st.feedback_url(table)
     cx = W // 2 if not fb else 300          # shift left to make room for the QR
 
     _seal(d, cx, 222)

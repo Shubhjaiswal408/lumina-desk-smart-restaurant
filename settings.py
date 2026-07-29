@@ -10,6 +10,7 @@ check), so all four services pick up a change within a second — no restart.
 import json
 import os
 import threading
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import config
 
@@ -107,3 +108,28 @@ def use_cloud() -> bool:
 
 def force_local() -> bool:
     return get("mode") == "offline"
+
+
+def feedback_url(table: str = "") -> str:
+    """The feedback form link, with the guest's table already filled in.
+
+    Google Forms will hand you a "pre-filled link" containing sample answers.
+    Put the literal word TABLE in the table question, paste the resulting link
+    into Settings, and every response arrives tagged with the table it came
+    from — the guest never has to know their table number, let alone type it.
+
+    Any other link is returned untouched, so a plain form URL still works.
+    """
+    url = (get("feedback_url", "") or "").strip()
+    if not url or not table:
+        return url
+    parts = urlsplit(url)
+    if not parts.query:
+        return url
+    pairs = parse_qsl(parts.query, keep_blank_values=True)
+    # Only swap a value that is exactly our placeholder — never touch the form
+    # id or Google's own parameters.
+    filled = [(k, table if v == "TABLE" else v) for k, v in pairs]
+    if filled == pairs:
+        return url
+    return urlunsplit(parts._replace(query=urlencode(filled)))

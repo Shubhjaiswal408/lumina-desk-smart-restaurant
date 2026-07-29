@@ -130,6 +130,34 @@ check(menu.label_for(pizza, "Large") == "Large Margherita", "a real size leads")
 check(menu.label_for(burger, "Cheese Ring") == "Classic Aloo Tikki Burger (Cheese Ring)",
       "a variant trails in brackets")
 
+print("\nThe feedback QR knows which table it came from")
+import json                                                       # noqa: E402
+import pathlib                                                    # noqa: E402
+import settings                                                   # noqa: E402
+
+_sp = pathlib.Path(sys.path[0]) / "settings.json"
+_orig = _sp.read_text() if _sp.exists() else None
+try:
+    _d = json.loads(_orig) if _orig else {}
+    _d["feedback_url"] = ("https://docs.google.com/forms/d/e/1FAIpQLSxTABLEx/viewform"
+                          "?usp=pp_url&entry.1234567=TABLE")
+    _sp.write_text(json.dumps(_d, indent=2))
+    settings._mtime = 0
+    check(settings.feedback_url("07").endswith("entry.1234567=07"),
+          "the table is filled into the pre-filled link")
+    # A form id can contain the letters TABLE; only an exact answer value moves.
+    check("1FAIpQLSxTABLEx" in settings.feedback_url("07"),
+          "the form id is never rewritten")
+    _d["feedback_url"] = "https://forms.gle/abc123"
+    _sp.write_text(json.dumps(_d, indent=2))
+    settings._mtime = 0
+    check(settings.feedback_url("07") == "https://forms.gle/abc123",
+          "a plain form link is left exactly as pasted")
+finally:
+    if _orig is not None:
+        _sp.write_text(_orig)
+    settings._mtime = 0
+
 print("\nMoney is computed, never spoken by a model")
 s = Session()
 s.add_dish(pizza, 2, "Large")
