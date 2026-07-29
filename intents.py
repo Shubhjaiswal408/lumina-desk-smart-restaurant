@@ -131,6 +131,16 @@ def parse_intent(text: str) -> dict:
     if has("split", "divide"):
         return {"intent": "split_bill", "text": text, "ways": _split_ways(t)}
 
+    # "How much is a margherita" is a PRICE question, not a bill question, and
+    # certainly not an order — answering it by adding the dish to the cart is the
+    # kind of thing that gets a guest charged for something they never ordered.
+    if has("how much is", "how much are", "how much for", "how much does",
+           "price of", "price for", "the price", "cost of", "how much do"):
+        d = menu.find_dish(t)
+        if d:
+            return {"intent": "ask_price", "text": text, "dish": d,
+                    "size": menu.find_size(t, d) or ""}
+
     # Bill
     if has("bill", "total", "how much", "what do i owe", "check please", "the check"):
         return {"intent": "check_bill", "text": text}

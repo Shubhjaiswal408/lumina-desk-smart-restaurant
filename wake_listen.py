@@ -30,6 +30,7 @@ import kds_data
 import lang
 import llm
 import mqtt_bus
+import net
 import payments
 import responses
 import settings
@@ -96,28 +97,47 @@ def _handle_button(key: str, tbl, client):
             speak("I'm listening again.")
 
 
+# Intents whose answer must be exact — prices, allergens, bill maths, the real
+# dish list. dialog.py computes all of those from the menu, so the model's
+# wording is discarded for them no matter which brain produced it.
+FACT_INTENTS = {"check_bill", "split_bill", "pay", "ask_price", "ask_ingredient",
+                "ask_allergen", "show_menu", "show_category"}
+
+# Fact intents that are meaningless without knowing which dish is meant. If the
+# rules can't name one, the model gets a turn — it can resolve "what's in it?"
+# from the conversation in a way a regex cannot.
+_NEEDS_DISH = {"ask_price", "ask_ingredient", "ask_allergen"}
+
+
 def understand(transcript: str, session) -> dict:
     """Work out what the guest wants.
 
-    Online: straight to the cloud LLM — it's fast (~0.4 s) and handles anything.
+    The rule parser runs first either way, because it costs about 5 ms.
 
-    Offline: the on-device model takes ~9 s, so try the rule parser FIRST. It is
-    instant and reliably right for the common commands (order X, what's my bill,
-    remove the naan, what's in the pizza). Only genuinely unusual phrasing falls
-    through to the slow local model. Most turns end up instant instead of 9 s.
+    Offline it answers whatever it can, since the on-device model needs ~9 s.
+
+    Online we still send anything conversational to the cloud model — but not the
+    fact questions. Their answer is computed from the menu regardless, so paying
+    ~450 ms for a phrasing we then throw away is pure latency at the table.
     """
+    rules = intents.parse_intent(transcript)
+    intent = dialog.canonical(rules["intent"])
+
     if settings.force_local():
-        rules = intents.parse_intent(transcript)
-        if rules["intent"] not in ("unknown", "smalltalk"):
+        if intent not in ("unknown", "smalltalk"):
             print("  (rules — instant)", flush=True)
             return rules
+    elif intent in FACT_INTENTS and (
+            intent not in _NEEDS_DISH or rules.get("dish") or session.last_dish):
+        print("  (rules — instant; this answer is computed, not phrased)", flush=True)
+        return rules
 
     if _LLM_ON:
         try:
-            return llm.understand(transcript, session)
+            return llm.understand(transcript, session, rules)
         except Exception as e:
             print(f"  (LLM unavailable, using rules: {e})", flush=True)
-    return intents.parse_intent(transcript)
+    return rules
 
 
 def converse(capture, model, session, first_time: bool) -> None:
@@ -163,13 +183,10 @@ def converse(capture, model, session, first_time: bool) -> None:
         before = _cart_sig(session)
         det = dialog.handle(result, session)   # updates session; exact/grounded reply
 
-        # Fact-critical intents must speak the exact numbers/allergens. Everything
-        # else speaks the LLM's warm, natural reply (falls back to det if absent).
-        # These must speak the real data — prices, allergens, and the actual list
-        # of dishes. Everything else uses the LLM's warmer wording.
-        FACT = {"check_bill", "split_bill", "pay", "ask_ingredient", "ask_allergen",
-                "show_menu", "show_category"}
-        use_llm = result["intent"] not in FACT and bool(result.get("reply"))
+        # Fact-critical intents speak the exact numbers/allergens computed above.
+        # Everything else speaks the LLM's warmer wording when it produced any.
+        use_llm = (dialog.canonical(result["intent"]) not in FACT_INTENTS
+                   and bool(result.get("reply")))
         reply = result["reply"] if use_llm else det
 
         if lang.is_english(wlang):
@@ -305,6 +322,12 @@ def main() -> None:
             if score >= thresh and (now - last_trigger) > config.WAKE_COOLDOWN_SEC:
                 last_trigger = now
                 print(f"\n  >>> WAKE ({score:.2f})", flush=True)
+
+                # The guest is about to speak for a second or two, and we will
+                # need the cloud when they stop. Open the TLS connection now, in
+                # the background, so that handshake isn't on the critical path.
+                if settings.groq_key():
+                    net.warm()
 
                 converse(capture, model, tbl["session"], first_time=not tbl["welcomed"])
                 tbl["welcomed"] = True

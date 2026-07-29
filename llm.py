@@ -20,6 +20,7 @@ import re
 import requests
 
 import config
+import net
 import menu
 import settings
 
@@ -28,8 +29,9 @@ LOCAL_MODEL = "hf.co/LiquidAI/LFM2-700M-GGUF"
 
 INTENTS = [
     "order", "remove", "replace", "clear_cart", "check_bill", "split_bill",
-    "ask_ingredient", "ask_allergen", "recommend", "show_menu", "show_category",
-    "request_item", "call_staff", "pay", "unavailable", "smalltalk", "end",
+    "ask_price", "ask_ingredient", "ask_allergen", "recommend", "show_menu",
+    "show_category", "request_item", "call_staff", "pay", "unavailable",
+    "smalltalk", "end",
 ]
 
 _SERVICE_NAMES = ", ".join(menu.SERVICE_ITEMS)
@@ -220,7 +222,7 @@ def _via_groq(text: str, session) -> dict:
         "temperature": 0.2,
         "max_tokens": 200,
     }
-    r = requests.post(
+    r = net.session().post(
         config.GROQ_CHAT_URL,
         headers={"Authorization": f"Bearer {settings.groq_key()}"},
         json=payload, timeout=12,
@@ -259,7 +261,9 @@ def _via_local(text: str, session) -> dict:
         "format": "json", "stream": False, "keep_alive": "30m",
         "options": {"temperature": 0.2, "num_predict": 120},
     }
-    r = requests.post(OLLAMA_URL, json=payload, timeout=60)   # cold start is slow
+    # A guest will not wait a minute. If the local model is that slow the
+    # caller falls back to rules, which is a better answer than silence.
+    r = requests.post(OLLAMA_URL, json=payload, timeout=20)
     r.raise_for_status()
     raw = json.loads(r.json()["message"]["content"])
     return _normalize(raw, text)
@@ -277,18 +281,35 @@ def warm_local():
         return False
 
 
-def understand(text: str, session) -> dict:
-    """Groq first (fast, accurate); local LFM2 fallback.
+def understand(text: str, session, rules: dict = None) -> dict:
+    """Groq first (fast, accurate), then rules, then the local model.
+
+    `rules` is the caller's already-parsed rule result. When the cloud fails —
+    a rate limit, a dropped line — reaching for the 700M local model costs the
+    guest ~9 seconds at the table. If the rules understood the sentence, they
+    are instant and just as correct, so they go first. The local model is for
+    phrasing the rules genuinely can't parse.
 
     In offline mode `settings.groq_key()` returns "" so we never touch the
     network — everything runs on the Pi.
     """
-    if settings.groq_key():
+    online = bool(settings.groq_key())
+    if online:
         try:
             return _via_groq(text, session)
         except Exception as e:
-            print(f"  (Groq NLU failed, trying local: {e})", flush=True)
-    return _via_local(text, session)
+            print(f"  (Groq NLU failed: {e})", flush=True)
+            if rules and rules["intent"] not in ("unknown", "smalltalk"):
+                print("  (answering from rules — instant)", flush=True)
+                return rules
+    try:
+        return _via_local(text, session)
+    except Exception as e:
+        # A 700M model sometimes emits JSON it can't finish. Losing the turn over
+        # that is worse than answering from rules, which handle the common asks.
+        print(f"  (local NLU failed, using rules: {e})", flush=True)
+        import intents
+        return rules or intents.parse_intent(text)
 
 
 def translate(text: str, language_name: str) -> str:
@@ -308,7 +329,7 @@ def translate(text: str, language_name: str) -> str:
             "temperature": 0,
             "max_tokens": 200,
         }
-        r = requests.post(config.GROQ_CHAT_URL,
+        r = net.session().post(config.GROQ_CHAT_URL,
                           headers={"Authorization": f"Bearer {settings.groq_key()}"},
                           json=payload, timeout=10)
         r.raise_for_status()

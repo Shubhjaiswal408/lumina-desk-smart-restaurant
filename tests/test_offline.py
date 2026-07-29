@@ -61,6 +61,35 @@ intent("i want to pay", "pay")
 intent("cancel my order", "clear_cart")
 intent("that's all", "end_conversation")
 
+print("\nPrice questions are not orders")
+# "what's the price of X" used to ADD X to the cart, and "how much is X" used to
+# be answered with the guest's bill.
+intent("how much is a margherita", "ask_price")
+intent("what is the price of paneer momo", "ask_price")
+intent("how much for two cold coffee", "ask_price")
+order("what is the price of paneer momo", [])
+order("how much is a margherita", [])
+intent("what's my bill", "check_bill")
+intent("what do i owe", "check_bill")
+
+print("\nWhisper prompt fits Groq's limit")
+import stt                                                        # noqa: E402
+prompt = stt._stt_prompt()
+check(len(prompt) <= 896, f"prompt is {len(prompt)} chars (Groq rejects >896)")
+check("Paneer" in prompt and "Calizza" in prompt,
+      "prompt keeps the words Whisper actually needs help with")
+
+print("\nSpoken replies lead with a short clause")
+import tts                                                        # noqa: E402
+long_reply = ("I've added 1 Large Margherita and 2 Cold Coffees to your order, "
+              "468 rupees. Anything else?")
+lead = tts._phrases(long_reply)[0]
+check(len(lead) < len(long_reply), "a long reply is split so speech starts sooner")
+check(tts._phrases("Cleared. What would you like?") == ["Cleared. What would you like?"],
+      "a short reply is left alone")
+check("".join(tts._phrases(long_reply)).replace(" ", "")
+      == long_reply.replace(" ", ""), "splitting never loses a word")
+
 print("\nMulti-item orders")
 order("one large margherita and two cold coffee",
       [("Large Margherita", 1), ("Cold Coffee", 2)])

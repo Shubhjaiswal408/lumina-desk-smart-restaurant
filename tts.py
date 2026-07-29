@@ -26,6 +26,31 @@ if os.path.exists(_hi):
     VOICE_FILES["hi"] = _hi
 
 
+# Piper emits nothing until it has synthesised a whole line, so one long line
+# means the guest hears silence for the length of the whole sentence. Breaking
+# the opening clause off its own line gets the first words out roughly 300 ms
+# sooner; the rest follows as one piece so the delivery still sounds joined up.
+_LEAD_MIN, _LEAD_MAX = 12, 72
+_MARKS = (", ", ". ", "? ", "! ", " — ", "; ", ": ")
+
+
+def _phrases(text: str) -> list[str]:
+    """Split off the first clause, at the EARLIEST natural break that isn't
+    trivially short. Later breaks would leave the opening chunk long, which is
+    the thing we are trying to avoid."""
+    text = text.strip()
+    if len(text) <= _LEAD_MAX:
+        return [text]
+    cut = -1
+    for mark in _MARKS:
+        i = text.find(mark, _LEAD_MIN)
+        if i != -1 and (cut < 0 or i < cut):
+            cut = i
+    if cut < 0 or cut > _LEAD_MAX:
+        return [text]
+    return [text[:cut + 1].strip(), text[cut + 1:].strip()]
+
+
 class _PiperProc:
     """A resident Piper process for one voice (model stays loaded)."""
     def __init__(self, voice):
@@ -53,7 +78,8 @@ class _PiperProc:
         """Generate + play one line, STREAMING audio to aplay as it's produced so
         speech starts almost immediately. Returns True if any audio played."""
         self._ensure()
-        self.proc.stdin.write((text.replace("\n", " ") + "\n").encode("utf-8"))
+        payload = "\n".join(_phrases(text.replace("\n", " "))) + "\n"
+        self.proc.stdin.write(payload.encode("utf-8"))
         self.proc.stdin.flush()
         aplay = subprocess.Popen(
             ["aplay", "-q", "-r", str(self.sr), "-f", "S16_LE", "-c", "1",

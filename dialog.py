@@ -21,6 +21,11 @@ _ALIASES = {
 }
 
 
+def canonical(intent: str) -> str:
+    """Map either naming scheme (rules or LLM) onto the internal one."""
+    return _ALIASES.get(intent, intent)
+
+
 def _diet(dish: dict) -> str:
     if dish["vegan"]:
         return "vegan"
@@ -99,6 +104,20 @@ def handle(result: dict, session: Session) -> str:
                 msg = f"Swapped it for {label}, {price} rupees."
             return msg + " Anything else?"
         return "No problem — what instead?"
+
+    if intent == "ask_price":
+        d = result.get("dish") or session.last_dish
+        if not d:
+            return "Which dish did you mean?"
+        session.last_dish = d          # so "yes, one of those" works next turn
+        size = result.get("size")
+        if size:
+            return f"{menu.label_for(d, size)} is {menu.price_for(d, size)} rupees. Want one?"
+        sizes = menu.size_names(d)
+        if sizes:
+            bits = ", ".join(f"{s} {menu.price_for(d, s)}" for s in sizes)
+            return f"{d['name']} — {bits} rupees. Which one?"
+        return f"{d['name']} is {menu.price_for(d)} rupees. Want one?"
 
     if intent == "request_item":
         item, qty = result.get("item"), result.get("quantity", 1)

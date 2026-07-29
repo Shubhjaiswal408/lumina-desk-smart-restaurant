@@ -63,7 +63,8 @@ built around the ways they actually fail:
 | **"No wait, I said pepperoni"** | The model sees the conversation *and* the current cart, so corrections, negation and pronouns ("add it", "remove one") work. |
 | **"Is there egg in this?"** | Allergen and ingredient questions are forced down a deterministic path. It reads from the database, never from the model's memory. |
 | **The internet dies mid-service** | Offline mode makes **zero network calls** — wake word, speech recognition, understanding, speech and display all run on the Pi. |
-| **Offline is unusably slow** | A 700M model on a Pi CPU needs ~9 s. So offline tries a **rule parser first** — instant and reliably right for the handful of things guests actually say. Measured: **0.1–5.6 ms** for common turns. |
+| **Offline is unusably slow** | A 700M model on a Pi CPU needs ~9 s. So a **rule parser runs first** — instant and reliably right for the handful of things guests actually say. It also answers fact questions *online*, because their reply is computed from the menu regardless. See [How fast, measured](#how-fast-measured). |
+| **"What's the price of a paneer momo?"** | Answered, not ordered. A question about a dish used to put it in the cart — the fastest way to bill someone for something they never asked for. |
 | **The guest doesn't speak English** | Whatever language they use, Lumina replies in it. |
 | **A shy guest, or a very loud room** | Three physical buttons on the panel: call a waiter, show the bill, mute. |
 | **The next party inherits the last bill** | The table has a lifecycle. Payment banks the order, clears the ticket, resets the voice session and flips the table to *cleaning*. |
@@ -388,16 +389,49 @@ to a microphone that isn't listening.
 
 Set in **Settings → Brain mode**. Applies within a second, no restart.
 
-| Mode | Speech → text | Understanding | Speed | Internet |
-|---|---|---|---|---|
-| **Auto** *(default)* | Groq Whisper → Vosk | Groq 70B → LFM2 | ~0.4 s | Not required |
-| **Online** | Groq Whisper | Groq 70B | ~0.4 s | Required |
-| **Offline** | Vosk | Rules → LFM2-700M | **~5 ms** typical, ~9 s for unusual phrasing | **None at all** |
+| Mode | Speech → text | Understanding | Internet |
+|---|---|---|---|
+| **Auto** *(default)* | Groq Whisper → Vosk | rules → Groq 70B → LFM2 | Not required |
+| **Online** | Groq Whisper | rules → Groq 70B | Required |
+| **Offline** | Vosk | rules → LFM2-700M | **None at all** |
 
 Offline genuinely makes zero network calls. Its one real weakness is **speech
 recognition** — Vosk's small model is less accurate than cloud Whisper at
 conversational distance across a noisy room. **Auto is the recommendation:** cloud
 accuracy when the line is up, local resilience when it isn't.
+
+### How fast, measured
+
+`tools_bench.py` speaks test phrases through the real pipeline and times each
+stage. On a Pi 5, median, in `auto` mode:
+
+| Stage | Fact questions | Ordering |
+|---|---|---|
+| Speech → text (Groq Whisper) | 264 ms | 264 ms |
+| Understanding | **< 5 ms** (rules) | ~500 ms (cloud) |
+| Compute the reply | < 1 ms | < 1 ms |
+| First word out of the speaker | ~250 ms | ~250 ms |
+| **Total** | **~0.5 s** | **~1.0 s** |
+
+Plus the 0.6 s of silence the guest waits through to prove they've stopped
+talking (**Settings → end-of-speech pause**).
+
+Three things make it that quick:
+
+- **Fact questions never touch the cloud.** "What's my bill", "how much is a
+  paneer momo", "what's in this" — the answer is computed from the menu either
+  way, so asking a model to phrase something we then discard was pure latency.
+  The rule parser classifies those in under 5 ms and we go straight to the
+  answer. Conversational turns still get the cloud model.
+- **One kept-alive HTTPS connection**, opened the moment the wake word fires —
+  while the guest is still speaking. A cold TLS handshake to Groq costs ~85 ms
+  per call, twice a turn.
+- **Speech starts on the first clause.** Piper emits nothing until it has
+  synthesised a whole line, so a long reply meant a long silence. Splitting the
+  opening clause onto its own line got the first word out ~160 ms sooner, with
+  no audible seam (measured: the total audio is the same length either way).
+
+Run it yourself: `./venv/bin/python tools_bench.py`
 
 ### Payments
 
@@ -477,12 +511,22 @@ payment_watcher.py  settles bills by reading payment emails (IMAP)
 display_service.py  renders + streams frames to the panel
 ui_render.py        the 800×480 ePaper design system (Pillow)
 settings.py         runtime settings overlay (settings.json)
+net.py              one kept-alive HTTPS session for every cloud call
 
 admin/              React + TypeScript + Tailwind + shadcn/ui console
 firmware/           ESP32 sketches (WiFi panel, USB panel, hardware tests)
 systemd/            service units — everything auto-starts on boot
 training/           Colab notebook to train your own wake word
+tests/              offline-path regression tests (no mic, no network)
+tools_bench.py      time every stage of a turn
+tools_shot.py       screenshot the console for these docs
 docs/images/        the screenshots in this README
+```
+
+```bash
+./venv/bin/python tests/test_offline.py    # correctness, ~2 s, no hardware
+./venv/bin/python tools_bench.py           # latency, per stage
+./venv/bin/python ui_render.py             # regenerate the ePaper images
 ```
 
 Regenerate the ePaper images any time with `./venv/bin/python ui_render.py`.

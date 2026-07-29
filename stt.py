@@ -7,6 +7,7 @@ until the guest goes quiet). transcribe() sends that audio to Groq's Whisper
 """
 import io
 import json
+import re
 import wave
 
 import numpy as np
@@ -14,14 +15,54 @@ import requests
 
 import config
 import menu
+import net
 import settings
 
-# Bias Whisper toward the real menu so dish names transcribe correctly
-# ("paneer tikka" instead of "an intika"). Works across languages (proper nouns).
+# Whisper takes a prompt that biases it toward words it would otherwise mangle
+# ("paneer tikka", not "an intika"). Groq caps that prompt at 896 characters.
+# The full menu is several times longer, and sending it whole makes every cloud
+# transcription fail with a 400 — silently dropping the system onto offline
+# Vosk, which is much less accurate. So send only the distinctive words.
+_PROMPT_LIMIT = 880
+
+# Words Whisper already knows perfectly well; spending prompt budget on them
+# would crowd out the ones it actually needs help with.
+_GENERIC = {
+    "and", "with", "the", "of",
+    "veg", "cheese", "cheesy", "garlic", "bread", "burger", "pizza", "fries",
+    "rings", "ring", "roll", "rolls", "shake", "milkshake", "coffee", "cold",
+    "hot", "iced", "tea", "green", "apple", "lime", "mango", "strawberry",
+    "vanilla", "chocolate", "choco", "corn", "onion", "potato", "spicy",
+    "sweet", "double", "classic", "crispy", "plain", "salted", "special",
+    "combo", "regular", "medium", "large", "stuffed", "mexican", "italian",
+    "chips", "sauce", "shots", "slice", "patty", "brownie", "cake", "lava",
+    "nachos", "supreme", "delight", "magic", "crunch", "fiesta", "mushroom",
+    "sugarfree", "explosion", "american", "indo", "asian", "veggie", "veggies",
+}
+
+_prompt_cache: dict = {}
+
+
 def _stt_prompt() -> str:
-    """Rebuilt each call so newly added dishes are transcribed correctly too."""
-    return "Indian restaurant order. Menu: " + ", ".join(
-        d["name"] for d in menu.all_dishes()) + "."
+    """Distinctive menu words, most common first, trimmed to fit Groq's limit.
+    Rebuilt whenever the menu changes so newly added dishes are heard too."""
+    names = tuple(d["name"] for d in menu.all_dishes())
+    if _prompt_cache.get("key") != names:
+        counts: dict[str, int] = {}
+        for n in names:
+            for w in re.findall(r"[A-Za-z][A-Za-z'-]+", n):
+                if len(w) < 4 or w.lower() in _GENERIC:
+                    continue
+                counts[w] = counts.get(w, 0) + 1
+        head = "Indian restaurant order. Menu: "
+        out = head
+        for w in sorted(counts, key=lambda w: (-counts[w], w)):
+            nxt = out + (w if out == head else ", " + w)
+            if len(nxt) + 1 > _PROMPT_LIMIT:
+                break
+            out = nxt
+        _prompt_cache.update(key=names, text=out + ".")
+    return _prompt_cache["text"]
 
 
 # ---------- recording (VAD) ----------
@@ -107,7 +148,7 @@ def _groq_transcribe(pcm: np.ndarray, key: str) -> tuple[str, str]:
     """Returns (text, detected_language). No language pin -> Whisper auto-detects
     across ~99 languages; verbose_json gives us the detected language back."""
     wav = _pcm_to_wav(pcm)
-    resp = requests.post(
+    resp = net.session().post(
         config.GROQ_STT_URL,
         headers={"Authorization": f"Bearer {key}"},
         files={"file": ("command.wav", wav, "audio/wav")},
