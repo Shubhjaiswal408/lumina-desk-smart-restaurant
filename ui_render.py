@@ -125,11 +125,11 @@ def _header(d, table, status, listening):
     tf = font("sans_bold", 18)
     _right(d, W - MARGIN, 43, f"Table {table}", tf, BLACK)
 
-    # When staff have muted the assistant, say so plainly — otherwise a guest
-    # would talk to a screen that has quietly stopped answering.
+    # When the mic is closed, say so plainly — otherwise a guest would talk to a
+    # screen that has quietly stopped listening.
     state = _assistant_state()
     if state in ("muted", "off"):
-        label = "Voice muted" if state == "muted" else "Voice off"
+        label = "Mic off" if state == "muted" else "Voice off"
         sf = font("sans_bold", 15)
         sw = d.textlength(label, font=sf)
         bx0 = W - MARGIN - sw - 56
@@ -250,7 +250,9 @@ def render_order(session, table="07", status="Listening", hint=None, kitchen=Non
             else:
                 y += 46
         _bill_card(d, session, rupee)
-        _footer(d, hint or "Say “Hey Lumina” to add more, or to pay.")
+        _footer(d, hint or ("Say “Hey Lumina” to add more, or to pay."
+                            if _assistant_state() == "active" else
+                            "Mic off · middle button shows your bill, left calls a server"))
     else:
         _render_welcome(d)
         _footer(d, hint or "Pure veg  ·  Pizzas, burgers, momos, shakes  ·  Table service by voice")
@@ -364,14 +366,35 @@ def render_payment(session, upi_url, table="07", vpa="", paid=False):
     _right(d, W - MARGIN, y + 34, f"{rupee}{_money(session.total())}",
            font("sans_bold", 40), RED)
 
-    _footer(d, f"Paying {vpa or 'the restaurant'} · say “Hey Lumina” if you need help")
+    _footer(d, f"Paying {vpa or 'the restaurant'} · "
+            + ("say “Hey Lumina” if you need help" if _assistant_state() == "active"
+               else "press the left button if you need help"))
     return img
 
 
 def _render_welcome(d):
     """Empty-cart state. The printed menu is already on the table, so this screen
     doesn't repeat it — it teaches the one thing a new guest needs to know: the
-    wake word, and the three things worth asking for."""
+    wake word, and the three things worth asking for.
+
+    When the mic is closed it must not invite anyone to talk to it. A guest who
+    speaks to a dead screen and gets nothing back blames the restaurant."""
+    state = _assistant_state()
+    if state != "active":
+        d.text((MARGIN, 156), "The microphone is", font=font("sans", 20), fill=BLACK)
+        d.text((MARGIN, 186), "switched off", font=font("serif_bold", 46), fill=RED)
+        d.text((MARGIN, 258),
+               "Press the right-hand button to turn it back on."
+               if state == "muted" else "Please order with a member of staff.",
+               font=font("sans", 18), fill=BLACK)
+        y = 300
+        for line in ("Left button  ·  call a server",
+                     "Middle button  ·  show your bill"):
+            d.ellipse([MARGIN + 2, y + 7, MARGIN + 8, y + 13], fill=RED)
+            d.text((MARGIN + 22, y), line, font=font("sans", 17), fill=BLACK)
+            y += 28
+        return
+
     d.text((MARGIN, 156), "Just say", font=font("sans", 20), fill=BLACK)
     d.text((MARGIN, 186), "“Hey Lumina”", font=font("serif_bold", 46), fill=RED)
 

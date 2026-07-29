@@ -109,14 +109,17 @@ def _speak_espeak(text, lang="en"):
 def speak(text, lang="en"):
     """Say `text` in the given espeak language code (default English).
 
-    In "muted" state we still log and show the reply on the ePaper, we just
-    don't play audio — useful during quiet hours or a very loud room.
+    When the assistant isn't active its microphone is closed, so nothing should
+    be coming through here anyway — but unprompted messages (a payment landing,
+    say) still can. Log them and show them on the ePaper; don't say them out
+    loud into a room that asked for quiet.
     """
     print(f"[Lumina/{lang}] {text}")
     try:
         import settings
-        if settings.get("assistant_state") == "muted":
-            print("  (muted — not spoken)", flush=True)
+        state = settings.get("assistant_state")
+        if state != "active":
+            print(f"  ({state} — not spoken)", flush=True)
             return
     except Exception:
         pass

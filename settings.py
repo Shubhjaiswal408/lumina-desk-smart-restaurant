@@ -28,8 +28,10 @@ DEFAULTS = {
 
     # --- assistant state (controlled from the console / panel buttons) ---
     # "active" : listens and speaks
-    # "muted"  : still listens and updates the screen, but stays silent
-    # "off"    : ignores the wake word entirely
+    # "muted"  : microphone CLOSED (device released). Screen + panel buttons
+    #            still work, and the panel's mute button turns it back on.
+    # "off"    : as muted, but the panel's mute button won't undo it — staff
+    #            have to switch it back on from the console.
     "assistant_state": "active",
 
     # --- restaurant ---

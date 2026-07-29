@@ -24,6 +24,10 @@ FRAME = 1600  # 0.1 s @ 16 kHz — capture granularity
 class AudioCapture:
     def __init__(self, max_seconds: float = 30.0):
         self._q: "queue.Queue[np.ndarray]" = queue.Queue(maxsize=int(max_seconds / 0.1))
+        self._stream = None
+        self._open()
+
+    def _open(self):
         self._stream = sd.InputStream(
             device=config.INPUT_DEVICE_INDEX,
             samplerate=config.SAMPLE_RATE,
@@ -50,8 +54,34 @@ class AudioCapture:
         self._stream.start()
 
     def stop(self):
-        self._stream.stop()
-        self._stream.close()
+        if self._stream is not None:
+            self._stream.stop()
+            self._stream.close()
+            self._stream = None
+
+    @property
+    def live(self) -> bool:
+        return self._stream is not None
+
+    def pause(self):
+        """Close the input stream so the OS hands the microphone back.
+
+        Muting has to mean the mic is *off*, not that we quietly ignore what it
+        hears — so we release the ALSA device entirely rather than just dropping
+        frames. On the reSpeaker the LED ring goes dark, which is the honest
+        signal a guest at the table needs.
+        """
+        if self._stream is None:
+            return
+        self.stop()
+        self.flush()
+
+    def resume(self):
+        if self._stream is not None:
+            return
+        self._open()
+        self._stream.start()
+        self.flush()
 
     def read(self, timeout: float = 1.0) -> np.ndarray:
         """Return the next 0.1 s frame of int16 mono audio."""

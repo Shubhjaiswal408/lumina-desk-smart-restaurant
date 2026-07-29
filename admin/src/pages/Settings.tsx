@@ -11,9 +11,9 @@ const ASSISTANT_STATES = [
   { id: "active", icon: Mic, label: "Active",
     desc: "Listening and speaking normally." },
   { id: "muted", icon: MicOff, label: "Muted",
-    desc: "Still takes orders and updates the screen, but stays silent. Good for quiet hours." },
+    desc: "Microphone closed — nothing is heard or said. The screen and the table's buttons still work, and the right-hand button turns it back on." },
   { id: "off", icon: PowerOff, label: "Off",
-    desc: "Ignores the wake word completely. Tables can still be run from here." },
+    desc: "Microphone closed and the table's mute button is disabled. Only staff can switch it back on, from here." },
 ]
 
 const MODES = [

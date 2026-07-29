@@ -17,6 +17,7 @@ Stop: Ctrl-C
 """
 import json
 import os
+import queue
 import sys
 import time
 
@@ -81,12 +82,17 @@ def _handle_button(key: str, tbl, client):
         print(f"  [button] bill shown (₹{total:.0f})", flush=True)
 
     elif key == "2":
-        now_muted = settings.get("assistant_state") != "muted"
-        state = "muted" if now_muted else "active"
-        settings.save({"assistant_state": state})
-        client.publish(mqtt_bus.T_ASSISTANT, state, retain=True)
-        print(f"  [button] assistant {'muted' if now_muted else 'unmuted'}", flush=True)
-        if not now_muted:                 # speak only when turning sound back on
+        state = settings.get("assistant_state")
+        if state == "off":
+            # "Off" is a manager's decision made in the console. The floor button
+            # must not quietly undo it.
+            print("  [button] ignored — assistant is off", flush=True)
+            return
+        new = "active" if state == "muted" else "muted"
+        settings.save({"assistant_state": new})
+        client.publish(mqtt_bus.T_ASSISTANT, new, retain=True)
+        print(f"  [button] mic {'closed' if new == 'muted' else 'open'}", flush=True)
+        if new == "active":               # speak only when the mic comes back
             speak("I'm listening again.")
 
 
@@ -264,7 +270,27 @@ def main() -> None:
 
     with AudioCapture() as capture:
         while True:
-            frame = capture.read(timeout=2.0)     # int16 mono @16k
+            # Muted and off both mean the microphone is CLOSED, not ignored —
+            # so a guest can see (reSpeaker LED) and trust that nothing is being
+            # heard. Staff bring it back from the console or the panel button,
+            # both of which arrive over MQTT and so still work with the mic shut.
+            if settings.get("assistant_state") != "active":
+                if capture.live:
+                    capture.pause()
+                    detector.reset()
+                    print(f"  [mic] closed — assistant "
+                          f"{settings.get('assistant_state')}", flush=True)
+                time.sleep(0.3)
+                continue
+            if not capture.live:
+                capture.resume()
+                detector.reset()
+                print("  [mic] open — assistant active", flush=True)
+
+            try:
+                frame = capture.read(timeout=2.0)     # int16 mono @16k
+            except queue.Empty:
+                continue
             score = detector.score(frame)
 
             now = time.time()
@@ -274,11 +300,6 @@ def main() -> None:
                     and now - tbl["last"] > config.SESSION_IDLE_RESET_SEC):
                 tbl["session"] = Session()
                 tbl["welcomed"] = False
-
-            # Staff can switch the assistant off from the console or a panel
-            # button; the service keeps running, it just stops responding.
-            if settings.get("assistant_state") == "off":
-                continue
 
             thresh = float(settings.get("wake_threshold", config.OWW_THRESHOLD))
             if score >= thresh and (now - last_trigger) > config.WAKE_COOLDOWN_SEC:
