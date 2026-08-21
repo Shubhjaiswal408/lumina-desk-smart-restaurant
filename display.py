@@ -114,12 +114,15 @@ class DisplayManager:
         self._thread = threading.Thread(target=self._worker, daemon=True)
         self._thread.start()
 
-    def request(self, session, **kw):
-        """Render the current state now and queue it for the panel."""
-        img = ui_render.to_epaper(ui_render.render_order(session, **kw))
+    def push(self, img):
+        """Queue an already-rendered (quantised) image for the panel."""
         with self._lock:
             self._pending = img
         self._event.set()
+
+    def request(self, session, **kw):
+        """Render an order screen now and queue it for the panel."""
+        self.push(ui_render.to_epaper(ui_render.render_order(session, **kw)))
 
     def _worker(self):
         while not self._stop:
@@ -167,17 +170,37 @@ def connect(port=None, baud=BAUD):
 
 
 if __name__ == "__main__":
-    # Standalone test: push the sample order to the panel.
-    import menu
-    from session import Session
-    s = Session()
-    s.add_dish(menu.find_dish("butter chicken"), 2)
-    s.add_dish(menu.find_dish("butter naan"), 2)
-    s.add_dish(menu.find_dish("masala chai"), 1)
+    # Standalone panel check: draw one screen of each kind on whichever panel is
+    # plugged in.  ./venv/bin/python display.py
+    import sys
+    import time as _t
 
-    print("opening display link...")
-    link = DisplayLink()
-    print("pushing frame (panel will refresh for ~15-20s)...")
-    ok = link.show(s)
-    print("result:", "OK" if ok else "FAILED")
+    import menu
+    import payments
+    from session import Session
+
+    s = Session()
+    s.add_dish(menu.find_dish("margherita"), 1, "Large")
+    s.add_dish(menu.find_dish("cheese stuffed garlic bread"), 2)
+    s.add_dish(menu.find_dish("cold coffee"), 2)
+
+    port, reset = _detect_port()
+    print(f"[display] {port} (auto-reset {'on' if reset else 'off'})")
+    link = DisplayLink(port, reset_on_open=reset)
+
+    url, _ = payments.upi_url(s.total(), "07")
+    screens = [
+        ("order",  ui_render.render_order(s, table="07")),
+        ("paying", ui_render.render_payment(s, url, table="07", vpa="auntynoz@upi")),
+        ("thanks", ui_render.render_payment(s, url, table="07", paid=True)),
+    ]
+    for name, img in screens:
+        t = _t.perf_counter()
+        ok = link.push_image(ui_render.to_epaper(img))
+        print(f"  {name:<7} {'OK' if ok else 'FAILED'} in {_t.perf_counter() - t:.1f}s")
+        if not ok:
+            link.close()
+            sys.exit(1)
+        _t.sleep(2)
     link.close()
+    print("panel drew every screen.")

@@ -168,6 +168,35 @@ finally:
         _sp.write_text(_orig)
     settings._mtime = 0
 
+print("\nThe pay QR survives both panels")
+# The mono panel's firmware maps red to black. The UPI QR has to stay scannable
+# after that — an unreadable QR means the guest simply cannot pay.
+import numpy as np                                                # noqa: E402
+import payments                                                   # noqa: E402
+import ui_render                                                  # noqa: E402
+from PIL import Image                                             # noqa: E402
+
+_s = Session()
+_s.add_dish(menu.find_dish("margherita"), 1, "Large")
+_url, _ = payments.upi_url(_s.total(), "07")
+_img = ui_render.to_epaper(ui_render.render_payment(_s, _url, table="07"))
+_a = np.asarray(_img, dtype=np.uint8)
+check(set(np.unique(_a)) <= {0, 1, 2}, "the frame only uses the panel's 3 colours")
+
+try:
+    from pyzbar.pyzbar import decode                              # noqa: E402
+    # Palette: 0 = white, 1 = black, 2 = red.
+    # Colour panel — only true black reads as dark; a QR that leaned on red
+    # would fall apart here, which is why ui_render thresholds it to pure B/W.
+    # Mono panel — the firmware maps red to black.
+    for label, arr in (("colour panel", np.where(_a == 1, 0, 255)),
+                       ("mono panel", np.where(_a == 0, 255, 0))):
+        got = decode(Image.fromarray(arr.astype(np.uint8), "L"))
+        check(bool(got) and got[0].data.decode() == _url,
+              f"UPI QR decodes on the {label}")
+except ImportError:
+    print("  skip  QR decode (pip install pyzbar for this one)")
+
 print("\nMoney is computed, never spoken by a model")
 s = Session()
 s.add_dish(pizza, 2, "Large")
