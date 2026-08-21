@@ -180,7 +180,7 @@ Take it in order; each step ends with something you can check.
 | Microphone | **reSpeaker XVF3800 4-Mic Array (USB)** | ₹6,000 | Yes — a cheap USB mic will hear the room, not the guest |
 | Speaker | Any powered speaker into the reSpeaker's out | ₹500 | Yes |
 | Table screen | **Seeed reTerminal E1002** — ESP32-S3 + 7.5" 800×480 colour ePaper, WiFi + battery | ₹7,000 | Optional — the voice half works without it |
-| *(cheaper screen)* | **XIAO 7.5" ePaper Panel** (ESP32-C3, mono, UC8179) | ₹4,000 | Faster refresh, no colour |
+| *(alternative)* | **XIAO 7.5" ePaper Panel** (ESP32-C3, mono, UC8179) | ₹4,000 | Firmware is here and builds, but this panel has never actually drawn on my unit — see [the mono panel](#the-mono-panel). Build with the E1002. |
 | SD card | 32 GB A2 | ₹600 | Yes |
 
 You also need a free **[Groq API key](https://console.groq.com)** for the fast
@@ -629,8 +629,14 @@ Logs: `journalctl -u lumina-voice -f`, or just open the **Terminal** page.
 
 ## Honest limitations
 
-- **Colour ePaper refresh is ~15–20 s.** That's the panel, not the software. The
-  mono UC8179 panel refreshes in ~4–6 s and supports partial refresh.
+- **Colour ePaper refresh is ~15–20 s.** That's the panel, not the software.
+- <a id="the-mono-panel"></a>**The mono panel is unfinished.** `firmware/display_mono`
+  builds and the serial path works, but on my XIAO 7.5" unit the panel has never
+  drawn anything. Seeed's own unmodified HelloWorld is blank on it too, under
+  both the driver-board and breakout-board pin maps, so the fault looks physical
+  rather than in this code — but I haven't proven that, and until someone does,
+  treat the mono panel as untested. `firmware/pin_probe` (which cannot hang) and
+  `firmware/display_probe` are there to narrow it down. **Build with the E1002.**
 - **One Pi per table.** The dashboard aggregates any number of tables, but each
   table needs its own Pi, mic and panel. That's the real cost driver.
 - **Offline mode is slower and less accurate** than cloud — mostly because of
