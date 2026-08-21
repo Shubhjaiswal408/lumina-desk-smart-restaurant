@@ -8,9 +8,18 @@
  */
 #include "TFT_eSPI.h"
 
-#ifdef EPAPER_ENABLE
-EPaper epaper;
+// Without EPAPER_ENABLE the driver compiles away to nothing: begin() and
+// update() vanish, the sketch still boots, still accepts a whole frame, and
+// still answers "OK" — while the panel stays blank. That reads exactly like a
+// hardware fault and sends you looking at the ribbon cable. Refuse to build.
+#ifndef EPAPER_ENABLE
+#error "EPAPER_ENABLE not defined - Seeed_GFX did not pick up driver.h."
 #endif
+#ifndef BOARD_SCREEN_COMBO
+#error "BOARD_SCREEN_COMBO not defined - driver.h was not applied."
+#endif
+
+EPaper epaper;
 
 static const uint16_t IMG_W = 800;
 static const uint16_t IMG_H = 480;
@@ -27,10 +36,21 @@ void setup() {
 
   buf = (uint8_t *)malloc(PACKED);   // C3 has no PSRAM; 96 KB fits in SRAM
 
+  // Resetting the MCU does not reset the panel. If it was mid-refresh when we
+  // rebooted (or the last sketch died), the panel keeps BUSY asserted and
+  // begin() waits for a line that is never released — the board hangs here
+  // forever, printing nothing further, which reads exactly like a dead panel.
+  // Pulsing RST first puts it back in a known state. Measured: BUSY 0 -> 1.
+  pinMode(TFT_BUSY, INPUT_PULLUP);
+  pinMode(TFT_RST, OUTPUT);
+  digitalWrite(TFT_RST, LOW);
+  delay(20);
+  digitalWrite(TFT_RST, HIGH);
+  delay(200);
+  Serial.printf("BOOT: panel reset, BUSY=%d\n", digitalRead(TFT_BUSY));
+
   Serial.println("BOOT: before epaper.begin()");
-#ifdef EPAPER_ENABLE
   epaper.begin();
-#endif
   Serial.println("BOOT: after epaper.begin()");
   Serial.println("LUMINA_DISPLAY_READY");
 }
