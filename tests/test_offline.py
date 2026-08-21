@@ -168,6 +168,22 @@ finally:
         _sp.write_text(_orig)
     settings._mtime = 0
 
+print("\nThe voice falls back, never doubles up")
+# _edge returning False must mean "nothing was played", or the fallback would
+# repeat a line the guest already heard half of.
+check(tts._edge("hi", "xx-not-a-language") is False,
+      "an unknown language declines instead of guessing a voice")
+_engine = settings.get("tts_engine")
+try:
+    settings.save({"tts_engine": "local"})
+    check(tts._edge("hi", "en") is False, "the local setting skips the online voice")
+    settings.save({"tts_engine": "natural", "mode": "offline"})
+    check(tts._edge("hi", "en") is False, "offline mode never reaches the network")
+finally:
+    settings.save({"tts_engine": _engine, "mode": "auto"})
+check("en-IN" in tts.EDGE_VOICES["en"], "English guests hear an Indian voice")
+check(set(("hi", "gu")) <= set(tts.EDGE_VOICES), "Hindi and Gujarati have voices")
+
 print("\nThe pay QR survives both panels")
 # The mono panel's firmware maps red to black. The UPI QR has to stay scannable
 # after that — an unreadable QR means the guest simply cannot pay.

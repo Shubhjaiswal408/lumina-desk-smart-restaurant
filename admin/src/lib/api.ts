@@ -74,6 +74,7 @@ export type Settings = {
   restaurant_name: string; table_id: string
   tax_mode: string; tax_rate: number; upi_vpa: string; upi_payee: string
   feedback_url: string; wake_threshold: number; vad_silence_sec: number
+  tts_engine: string; tts_rate: string
   reply_language: string
 }
 export const getSettings = () => j("/api/settings") as Promise<Settings>

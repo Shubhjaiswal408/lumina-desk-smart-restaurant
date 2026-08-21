@@ -202,6 +202,19 @@ export default function SettingsPage() {
             <Input defaultValue={s.restaurant_name}
               onBlur={(e) => e.target.value !== s.restaurant_name && save({ restaurant_name: e.target.value })} />
           </Row>
+          <Row label="Speaking voice"
+            hint="Natural is a real Indian-English voice (Hindi and Gujarati too) but takes ~0.6s to start. Local is Piper on the Pi — faster, more robotic, and the only option offline.">
+            <select className="h-9 rounded-md border bg-background px-3 text-sm"
+              defaultValue={s.tts_engine}
+              onChange={(e) => save({ tts_engine: e.target.value })}>
+              <option value="natural">Natural (online)</option>
+              <option value="local">Local (Piper)</option>
+            </select>
+          </Row>
+          <Row label="Speaking pace" hint='Nudge the natural voice faster or slower, e.g. "+12%"'>
+            <Input defaultValue={s.tts_rate} className="w-28"
+              onBlur={(e) => e.target.value !== s.tts_rate && save({ tts_rate: e.target.value })} />
+          </Row>
           <Row label="Wake sensitivity" hint="Lower = triggers more easily (0.3–0.7)">
             <Input type="number" step="0.05" defaultValue={s.wake_threshold} className="w-28"
               onBlur={(e) => { const v = Number(e.target.value); if (v !== s.wake_threshold) save({ wake_threshold: v }) }} />

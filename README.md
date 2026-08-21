@@ -133,7 +133,7 @@ Changes apply within a second.
   └───────────────┘     │  MQTT bus (mosquitto)      │              │
           ▲             └─────────────┬──────────────┘              │ "Ready"
           │ spoken reply              │ frames over WiFi            │
-          │ (Piper TTS)               ▼                             ▼
+          │ (Indian-English TTS)      ▼                             ▼
           └────────────────────  ePaper panel  ◀──────  status back to the table
 ```
 
@@ -144,7 +144,7 @@ Changes apply within a second.
 3. **Speech → text** — Groq Whisper (`whisper-large-v3-turbo`), primed with the live menu so dish names transcribe correctly. Vosk when offline.
 4. **Understanding** — the LLM gets the conversation, the cart and the real menu. Groq `llama-3.3-70b-versatile` online; LFM2-700M via Ollama offline.
 5. **Facts stay in code** — the model returns *intent*; `menu.py` and `session.py` compute money, time and allergens.
-6. **Reply** — Piper neural TTS runs as a resident process and streams audio as it generates, so the first word lands fast.
+6. **Reply** — an online neural voice speaks it: **Indian English**, Hindi or Gujarati, not American. Piper runs resident on the Pi as the fallback and the whole of offline mode. See [The voice](#the-voice).
 7. **Publish** — order and status go onto MQTT; the display service renders an 800×480 image with Pillow and streams it to the panel over WiFi.
 
 ### Why an MQTT bus
@@ -201,7 +201,7 @@ cd ~/lumina-desk
 ```bash
 sudo apt update
 sudo apt install -y python3-venv python3-scipy python3-sklearn \
-    espeak-ng libportaudio2 mosquitto mosquitto-clients avahi-daemon
+    espeak-ng libportaudio2 mosquitto mosquitto-clients avahi-daemon mpg123
 ```
 
 Let other devices on your WiFi reach the message broker — create
@@ -226,7 +226,7 @@ should print `test hi`.
 cd ~/lumina-desk
 python3 -m venv --system-site-packages venv
 ./venv/bin/pip install sounddevice openwakeword vosk requests paho-mqtt \
-    fastapi "uvicorn[standard]" pillow qrcode pyserial
+    fastapi "uvicorn[standard]" pillow qrcode pyserial edge-tts
 ```
 
 ## Step 4 — Find your microphone
@@ -244,7 +244,15 @@ and set `INPUT_DEVICE_INDEX` to the reSpeaker's input index.
 
 ## Step 5 — The voices and models
 
-**Piper (the voice)** — grab the `linux_aarch64` build from
+**The natural voice** — nothing to download; it streams from Microsoft's free
+endpoint. You just need the client and an MP3 decoder:
+
+```bash
+./venv/bin/pip install edge-tts
+sudo apt install -y mpg123
+```
+
+**Piper (the local voice)** — the fallback, and all of offline mode. Grab the `linux_aarch64` build from
 [rhasspy/piper releases](https://github.com/rhasspy/piper/releases) and extract it
 so the binary sits at `piper/piper`. Then a voice:
 
@@ -259,8 +267,8 @@ wget $BASE/hi/hi_IN/priyamvada/medium/hi_IN-priyamvada-medium.onnx.json
 cd ..
 ```
 
-Any other language still works — it falls back to espeak-ng, which covers ~100
-languages. It sounds robotic, but it's understood.
+Any other language still works: the online voice covers a few dozen, and beyond
+that it falls back to espeak-ng (~100 languages, robotic but understood).
 
 **Vosk (offline speech recognition)**:
 
@@ -412,8 +420,8 @@ stage. On a Pi 5, median, in `auto` mode:
 | Speech → text (Groq Whisper) | 264 ms | 264 ms |
 | Understanding | **< 5 ms** (rules) | ~500 ms (cloud) |
 | Compute the reply | < 1 ms | < 1 ms |
-| First word out of the speaker | ~250 ms | ~250 ms |
-| **Total** | **~0.5 s** | **~1.0 s** |
+| First word out of the speaker | ~700 ms natural / ~250 ms Piper | same |
+| **Total** | **~1.0 s** natural, **~0.5 s** Piper | **~1.5 s** / **~1.0 s** |
 
 Plus the 0.6 s of silence the guest waits through to prove they've stopped
 talking (**Settings → end-of-speech pause**).
@@ -432,6 +440,8 @@ Three things make it that quick:
   synthesised a whole line, so a long reply meant a long silence. Splitting the
   opening clause onto its own line got the first word out ~160 ms sooner, with
   no audible seam (measured: the total audio is the same length either way).
+  This does nothing for the online voice, whose delay is connection setup rather
+  than synthesis — see [The voice](#the-voice).
 
 Run it yourself: `./venv/bin/python tools_bench.py`
 
@@ -476,6 +486,40 @@ failure has to repair itself. What each one does:
 
 Test it the honest way — `sudo systemctl restart mosquitto` while an order is on
 the board, then place another one. It should just work.
+
+### The voice
+
+<a id="the-voice"></a>Piper is fast and local, but it speaks American English to
+guests in Gujarat. So **Settings → Speaking voice** offers two:
+
+| | Starts speaking in | Sounds like | Needs internet |
+|---|---|---|---|
+| **Natural** *(default)* | ~700 ms | a real Indian-English voice | yes |
+| **Local (Piper)** | ~250 ms | neural, but American and flatter | no |
+
+The natural voices are the ones Edge's read-aloud uses — free, no API key, and
+they cover **Indian English, Hindi, Gujarati**, most other Indian languages, and
+a couple of dozen more. That last part matters: before, anything outside English
+and Hindi fell through to espeak, which is robotic. Now it doesn't.
+
+The cost is honest: about 400 ms more before the guest hears anything. That is
+connection setup, not synthesis — a five-character reply takes just as long as a
+full sentence — so there is nothing to optimise away, which is also why the
+clause-splitting trick that helps Piper does nothing here. If your room would
+rather have the speed, switch to Local.
+
+Two things stop it becoming a liability:
+
+- **It is never the only option.** Offline mode never touches the network, and
+  any failure or an 8-second timeout falls through to Piper, then espeak. The
+  fallback only fires if *nothing* was played, so a guest never hears half a
+  sentence twice.
+- **The pace is tunable.** Neerja's default delivery is unhurried for a counter;
+  **Speaking pace** defaults to `+12%`, which takes a typical reply from 9.2s to
+  about 8.4s without sounding rushed.
+
+It is an unofficial endpoint. It has been reliable, but if it ever stops, the
+table keeps talking — just in Piper's voice.
 
 ### The feedback QR
 
@@ -539,7 +583,7 @@ intents.py          instant rule parser (the offline fast path)
 dialog.py           intent → spoken reply; updates the session
 menu.py             the menu: prices, sizes, allergens, tax, admin overrides
 session.py          per-table cart, bill maths, ETA
-tts.py              Piper (resident process) + espeak fallback
+tts.py              online neural voice -> resident Piper -> espeak
 lang.py             language detection → voice / espeak codes
 mqtt_bus.py         topics + publish/subscribe helpers
 

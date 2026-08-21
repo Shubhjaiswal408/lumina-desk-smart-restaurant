@@ -176,6 +176,34 @@ for code in tts.VOICE_FILES:
     except Exception as e:
         report(BAD, f"Piper [{code}]", str(e))
 
+engine = settings.get("tts_engine")
+if engine == "natural" and not settings.force_local():
+    report(OK if tts._MPG123 else BAD, "mpg123 (decodes the online voice)",
+           tts._MPG123 or "not installed — run: sudo apt install mpg123")
+    try:
+        import asyncio as _aio
+        import edge_tts  # noqa: F401
+
+        async def _first_chunk():
+            import time as _t
+            t0 = _t.perf_counter()
+            async for c in edge_tts.Communicate(
+                    "testing", tts.EDGE_VOICES["en"],
+                    rate=str(settings.get("tts_rate"))).stream():
+                if c["type"] == "audio" and c["data"]:
+                    return _t.perf_counter() - t0
+            return None
+
+        ms = _aio.run(_aio.wait_for(_first_chunk(), 12))
+        report(OK if ms else BAD, f"online voice {tts.EDGE_VOICES['en']}",
+               f"first audio in {ms * 1000:.0f} ms" if ms else "no audio returned")
+    except ImportError:
+        report(BAD, "edge-tts", "not installed — run: pip install edge-tts")
+    except Exception as e:
+        report(WARN, "online voice", f"{e} — Piper covers it")
+else:
+    report(WARN, "online voice", f"off (tts_engine={engine}, mode={settings.get('mode')})")
+
 report(OK if tts._ESPEAK else BAD, "espeak-ng (any other language)",
        tts._ESPEAK or "not installed")
 report(OK if shutil.which("aplay") else BAD, "aplay", config.PLAYBACK_DEVICE)

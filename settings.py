@@ -50,6 +50,15 @@ DEFAULTS = {
     "upi_payee": config.UPI_PAYEE_NAME,
     "feedback_url": "",
 
+    # --- voice ---
+    # "natural" : online neural voices (Indian English, Hindi, Gujarati).
+    #             Warmer, but ~600 ms slower to start; falls back to Piper.
+    # "local"   : Piper only. Faster and works with no internet at all.
+    "tts_engine": "natural",
+    # Neerja's default pace is unhurried for a counter. A nudge shortens every
+    # reply without sounding rushed. Edge syntax, e.g. "+0%", "+12%", "-5%".
+    "tts_rate": "+12%",
+
     # --- voice tuning ---
     "wake_threshold": config.OWW_THRESHOLD,
     "vad_silence_sec": config.VAD_SILENCE_SEC,

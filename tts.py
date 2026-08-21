@@ -7,6 +7,7 @@ fed to the running process and raw audio streams straight to aplay.
 English (and Hindi if present) use natural Piper voices; any other language falls
 back to espeak-ng (~100 languages, robotic but universal).
 """
+import asyncio
 import json
 import os
 import select
@@ -117,6 +118,81 @@ def _piper(text, code):
     return proc.speak(text)
 
 
+# --- online neural voices (Microsoft Edge) ---------------------------------
+# Piper is fast and local, but it speaks American English to guests in Gujarat.
+# These are the same neural voices Edge's read-aloud uses: free, no key, and
+# they include Indian English, Hindi and Gujarati. The cost is latency — the
+# service takes ~600 ms to answer no matter how short the line, because that is
+# connection setup rather than synthesis, so there is nothing to optimise away.
+# Piper stays the fallback and the whole of offline mode.
+EDGE_VOICES = {
+    "en": "en-IN-NeerjaNeural",   # Indian English, not American
+    "hi": "hi-IN-SwaraNeural",
+    "gu": "gu-IN-DhwaniNeural",
+    "mr": "mr-IN-AarohiNeural",
+    "ta": "ta-IN-PallaviNeural",
+    "te": "te-IN-ShrutiNeural",
+    "bn": "bn-IN-TanishaaNeural",
+    "kn": "kn-IN-SapnaNeural",
+    "ml": "ml-IN-SobhanaNeural",
+    "pa": "pa-IN-OjasNeural",
+    "ur": "ur-IN-GulNeural",
+    "es": "es-ES-ElviraNeural",
+    "fr": "fr-FR-DeniseNeural",
+    "de": "de-DE-KatjaNeural",
+    "ar": "ar-EG-SalmaNeural",
+    "zh": "zh-CN-XiaoxiaoNeural",
+    "ja": "ja-JP-NanamiNeural",
+    "ru": "ru-RU-SvetlanaNeural",
+}
+_EDGE_TIMEOUT = 8.0        # a table in silence is worse than a robotic voice
+_MPG123 = shutil.which("mpg123")
+
+
+async def _edge_pump(text, voice, sink):
+    import edge_tts
+    import settings
+    played = False
+    rate = str(settings.get("tts_rate", "+12%"))
+    async for chunk in edge_tts.Communicate(text, voice, rate=rate).stream():
+        if chunk["type"] == "audio" and chunk["data"]:
+            sink.write(chunk["data"])       # play as it arrives
+            sink.flush()
+            played = True
+    return played
+
+
+def _edge(text, code) -> bool:
+    """Speak with an online neural voice. False means 'nothing was played' —
+    the caller can safely fall back without the guest hearing it twice."""
+    voice = EDGE_VOICES.get(code)
+    if not voice or not _MPG123:
+        return False
+    try:
+        import settings
+        if settings.force_local() or settings.get("tts_engine") != "natural":
+            return False
+    except Exception:
+        return False
+
+    player = subprocess.Popen(
+        [_MPG123, "-q", "--no-control", "-a", config.PLAYBACK_DEVICE, "-"],
+        stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    played = False
+    try:
+        played = asyncio.run(asyncio.wait_for(
+            _edge_pump(text, voice, player.stdin), _EDGE_TIMEOUT))
+    except Exception as e:
+        print(f"[TTS] online voice failed ({e}); using Piper", flush=True)
+    finally:
+        try:
+            player.stdin.close()
+        except Exception:
+            pass
+        player.wait()
+    return played
+
+
 def _speak_espeak(text, lang="en"):
     if not _ESPEAK:
         print(f"[TTS unavailable] {text}")
@@ -149,6 +225,14 @@ def speak(text, lang="en"):
             return
     except Exception:
         pass
+    # Best voice first, then the fastest local one, then something that at least
+    # speaks. Each step only runs if the previous played nothing at all, so a
+    # guest never hears the same line twice.
+    try:
+        if _edge(text, lang):
+            return
+    except Exception as e:
+        print(f"[TTS] online voice failed ({e}); using Piper")
     if lang in VOICE_FILES and _PIPER_OK:
         try:
             if _piper(text, lang):
