@@ -70,62 +70,135 @@ def _phrases(text: str) -> list[str]:
 # Everything is resampled to one rate on the way in, because a single stream can
 # only have one: Piper is 22.05 kHz, the online voices are 24 kHz.
 SPEAK_RATE = 24000
-_PREROLL = b"\x00" * (SPEAK_RATE // 10)      # 50 ms, so the first sample isn't a click
+PREBUFFER = 1.2            # seconds of audio in hand before we start talking
 
 
 class _Speaker:
-    """A single ALSA stream that stays open, so speech never starts mid-word."""
+    """One ALSA stream, kept open AND kept fed.
+
+    Two separate faults produced two separate complaints.
+
+    The start of every reply was clipped, because opening the device let the
+    reSpeaker's amplifier mute in between. Holding the device open is only half
+    of it — an idle stream mutes too. So a keep-alive thread writes silence
+    whenever there's nothing to say. The amplifier is then permanently awake and
+    the first syllable is never lost.
+
+    Speech came out choppy, because PCM was written to aplay as fast as the
+    network happened to deliver it. Any stall in that stream is a gap in the
+    room. An utterance is now assembled first and handed over whole, so playback
+    can't run ahead of synthesis.
+    """
+
+    _KEEPALIVE = 0.2                   # seconds of silence per idle tick
 
     def __init__(self):
         self.proc = None
-        self.ends_at = 0.0        # when the audio written so far finishes playing
+        self.ends_at = 0.0             # when what we've written finishes playing
+        self._lock = threading.Lock()        # guards _pending
+        self._write_lock = threading.Lock()  # one writer at a time
+        self._pending = bytearray()    # this utterance, still being assembled
+        self._streaming = False        # has this utterance started playing?
+        self._spoken = 0               # bytes of THIS utterance handed to aplay
+        self._started = 0.0            # when its first byte went out
+        threading.Thread(target=self._keep_awake, daemon=True).start()
 
+    # --- device ---------------------------------------------------------
     def _ensure(self):
         if self.proc is None or self.proc.poll() is not None:
             self.proc = subprocess.Popen(
                 ["aplay", "-q", "-t", "raw", "-f", "S16_LE",
                  "-r", str(SPEAK_RATE), "-c", "1", "-D", config.PLAYBACK_DEVICE],
                 stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
-            self.proc.stdin.write(_PREROLL)
-            self.proc.stdin.flush()
+            self.ends_at = time.monotonic()
 
-    def write(self, pcm: bytes, rate: int = SPEAK_RATE):
-        """Play raw 16-bit mono PCM, resampling if it isn't our rate."""
+    def _raw(self, pcm: bytes, speech: bool = False):
+        """Write to the device. Serialised: a keep-alive tick must never land in
+        the middle of a sentence, which is exactly what choppy speech sounded
+        like."""
+        with self._write_lock:
+            self._ensure()
+            # Schedule the finish time BEFORE writing. aplay consumes at real
+            # time, so a big block blocks here for most of its own duration —
+            # timing it afterwards made wait() think the audio was nearly done.
+            self.ends_at = max(self.ends_at, time.monotonic()) + len(pcm) / 2 / SPEAK_RATE
+            if speech:
+                if not self._spoken:
+                    self._started = time.monotonic()
+                self._spoken += len(pcm)
+            try:
+                self.proc.stdin.write(pcm)
+                self.proc.stdin.flush()
+            except (BrokenPipeError, ValueError):
+                self.proc = None
+
+    def _keep_awake(self):
+        """Trickle silence while idle so the amplifier never powers down."""
+        while True:
+            time.sleep(self._KEEPALIVE / 2)
+            with self._lock:
+                if self._pending:
+                    continue
+                if self.ends_at - time.monotonic() < self._KEEPALIVE:
+                    self._raw(b"\x00" * int(SPEAK_RATE * 2 * self._KEEPALIVE))
+
+    # --- speaking -------------------------------------------------------
+    @staticmethod
+    def _resample(pcm: bytes, rate: int) -> bytes:
+        if rate == SPEAK_RATE:
+            return pcm
+        import numpy as np
+        a = np.frombuffer(pcm, dtype=np.int16)
+        idx = np.arange(int(len(a) * SPEAK_RATE / rate)) * rate / SPEAK_RATE
+        return a[np.clip(idx.astype(int), 0, len(a) - 1)].tobytes()
+
+    def feed(self, pcm: bytes, rate: int = SPEAK_RATE):
+        """Add audio to the current utterance, starting playback once there's a
+        cushion.
+
+        Waiting for the whole line before making a sound cost about two seconds
+        of silence after the guest stopped talking. Writing every chunk the
+        instant it arrived was the other extreme — any stall in the network was
+        a gap in the room. Both engines produce audio several times faster than
+        real time, so once PREBUFFER seconds are in hand the rest reliably stays
+        ahead of the speaker.
+        """
         if not pcm:
             return
-        self._ensure()
-        if rate != SPEAK_RATE:
-            import numpy as np
-            a = np.frombuffer(pcm, dtype=np.int16)
-            idx = (np.arange(int(len(a) * SPEAK_RATE / rate)) * rate / SPEAK_RATE)
-            pcm = a[np.clip(idx.astype(int), 0, len(a) - 1)].tobytes()
-        try:
-            self.proc.stdin.write(pcm)
-            self.proc.stdin.flush()
-        except (BrokenPipeError, ValueError):
-            self.proc = None            # died; the next line reopens it
-            return
-        # aplay buffers, so writing is not the same as being heard. Track when
-        # this audio will actually finish — the conversation loop must not start
-        # listening while Lumina is still mid-sentence.
-        secs = len(pcm) / 2 / SPEAK_RATE
-        now = time.monotonic()
-        self.ends_at = max(self.ends_at, now) + secs
+        with self._lock:
+            self._pending += self._resample(pcm, rate)
+            if self._streaming:
+                out, self._pending = bytes(self._pending), bytearray()
+            elif len(self._pending) >= PREBUFFER * SPEAK_RATE * 2:
+                out, self._pending = bytes(self._pending), bytearray()
+                self._streaming = True
+            else:
+                return
+        self._raw(out, speech=True)
+
+    def flush(self) -> bool:
+        """Play whatever is left and end the utterance."""
+        with self._lock:
+            pcm, self._pending = bytes(self._pending), bytearray()
+            spoke, self._streaming = self._streaming, False
+        if pcm:
+            self._raw(pcm, speech=True)
+        return bool(pcm) or spoke
 
     def wait(self):
-        """Block until everything written has been heard."""
-        left = self.ends_at - time.monotonic()
+        """Block until this utterance has actually been heard.
+
+        Timed from the utterance itself rather than a running clock: the
+        keep-alive silence shares the same stream, and letting it into the sum
+        made speak() return while Lumina was still talking — the loop would then
+        listen to the tail of its own sentence.
+        """
+        if not self._spoken:
+            return
+        left = self._spoken / 2 / SPEAK_RATE - (time.monotonic() - self._started)
         if left > 0:
             time.sleep(left)
-
-    def drain(self, seconds: float):
-        """Hold the device with silence so it never mutes between replies."""
-        self._ensure()
-        try:
-            self.proc.stdin.write(b"\x00" * int(SPEAK_RATE * 2 * seconds))
-            self.proc.stdin.flush()
-        except (BrokenPipeError, ValueError):
-            self.proc = None
+        self._spoken = 0
 
 
 _speaker = _Speaker()
@@ -158,7 +231,7 @@ class _PiperProc:
         """Generate + play one line, STREAMING audio to aplay as it's produced so
         speech starts almost immediately. Returns True if any audio played."""
         self._ensure()
-        payload = "\n".join(_phrases(text.replace("\n", " "))) + "\n"
+        payload = text.replace("\n", " ") + "\n"
         self.proc.stdin.write(payload.encode("utf-8"))
         self.proc.stdin.flush()
         fd = self.proc.stdout.fileno()
@@ -169,10 +242,11 @@ class _PiperProc:
                 chunk = os.read(fd, 4096)
                 if not chunk:
                     break
-                _speaker.write(chunk, self.sr)   # play as it generates
+                _speaker.feed(chunk, self.sr)    # assemble, don't play yet
                 got, first = True, False
             else:
                 break  # gap after audio (or nothing produced) -> utterance done
+        _speaker.flush()
         _speaker.wait()
         return got
 
@@ -225,7 +299,7 @@ def _drain_to_speaker(pipe):
         chunk = pipe.read(4096)
         if not chunk:
             return
-        _speaker.write(chunk)
+        _speaker.feed(chunk)
 
 
 async def _edge_pump(text, voice, sink):
@@ -275,6 +349,7 @@ def _edge(text, code) -> bool:
             pass
         player.wait()
         pump.join(timeout=5)
+        played = _speaker.flush() and played
         _speaker.wait()
     return played
 

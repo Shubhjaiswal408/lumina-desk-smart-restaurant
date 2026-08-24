@@ -57,7 +57,7 @@ DEFAULTS = {
     "tts_engine": "natural",
     # Neerja's default pace is unhurried for a counter. A nudge shortens every
     # reply without sounding rushed. Edge syntax, e.g. "+0%", "+12%", "-5%".
-    "tts_rate": "+12%",
+    "tts_rate": "+20%",
 
     # --- voice tuning ---
     "wake_threshold": config.OWW_THRESHOLD,

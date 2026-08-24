@@ -103,7 +103,9 @@ def handle(result: dict, session: Session) -> str:
         # The assumed size needs no announcement either: `summary` already says
         # "2 Paneer Momo (Steam)", so the guest hears the choice and can correct
         # it. Spelling out the alternatives cost three seconds on every order.
-        return f"{summary} — {total} rupees.{note} Anything else?"
+        # "Anything else?" every single time is 1.3 s of nothing — the guest
+        # already knows they can keep talking. Say what was heard and the money.
+        return f"{summary} — {total} rupees.{note}"
 
     if intent == "remove":
         dish = result.get("remove_dish") or result.get("dish") or session.last_dish
@@ -113,10 +115,10 @@ def handle(result: dict, session: Session) -> str:
         qty = result.get("quantity", 0) if result.get("qty_explicit") else 0
         if qty and qty > 0:
             ok = session.decrement_dish(dish, qty)
-            return (f"Done — {qty} {dish['name']} removed. Anything else?" if ok
+            return (f"Done, {qty} {dish['name']} off." if ok
                     else f"You don't have {dish['name']} on the order.")
         if session.remove_dish(dish):
-            return f"Taken off the {dish['name']}. Anything else?"
+            return f"Taken off the {dish['name']}."
         return f"You don't have {dish['name']} on the order."
 
     if intent == "replace":
@@ -132,7 +134,7 @@ def handle(result: dict, session: Session) -> str:
             msg = f"Got it — {label}, {price} rupees."
             if old:
                 msg = f"Swapped it for {label}, {price} rupees."
-            return msg + " Anything else?"
+            return msg
         return "No problem — what instead?"
 
     if intent == "ask_price":
