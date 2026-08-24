@@ -228,8 +228,9 @@ try:
     devs = sd.query_devices()
     cur = devs[config.INPUT_DEVICE_INDEX]
     report(OK, f"input index {config.INPUT_DEVICE_INDEX}", cur["name"])
-    ins = [d for d in devs if d["max_input_channels"] > 0]
-    if ins:
+    # Ask about the device we actually use. Any other input (the webcam has one)
+    # would otherwise make a claimed reSpeaker look free.
+    if cur["max_input_channels"] > 0:
         report(OK, "microphone is free", f"{cur['max_input_channels']} channel(s)")
     else:
         # PortAudio reports zero channels on a card someone else already holds.
