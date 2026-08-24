@@ -5,7 +5,7 @@ so it handles natural speech, corrections ("no, I said pepperoni"), negation
 ("I never asked for a pizza"), pronouns ("add it"), and off-menu requests
 (pepperoni pizza isn't on the menu -> it says so instead of forcing a match).
 
-Backends, fastest first: Groq cloud (llama-3.3-70b-versatile, ~0.4 s) when online,
+Backends, fastest first: Groq cloud (openai/gpt-oss-20b, ~0.9 s) when online,
 local LFM2-700M via Ollama (~6-9 s) offline. Offline, rules (intents.py) run
 FIRST because they are instant and correct for almost every real turn; the local
 model only handles what they can't parse.
@@ -119,7 +119,24 @@ Examples:
 - "actually remove the biryani" -> {{"intent":"remove","remove_dish":"Chicken Biryani"}}"""
 
 
-def _normalize(raw: dict, text: str) -> dict:
+def _clean_reply(reply) -> str:
+    """Drop a reply that is obviously the prompt template rather than speech.
+
+    The small local model has literally answered "<one short friendly sentence>"
+    — spoken aloud, to a guest. An empty string here makes dialog.py fall back to
+    its own deterministic wording, which is always sayable.
+    """
+    r = str(reply or "").strip()
+    if not r:
+        return ""
+    if "<" in r and ">" in r:          # an unfilled placeholder
+        return ""
+    if r.startswith("{") or r.startswith("["):   # raw JSON leaked through
+        return ""
+    return r
+
+
+def _normalize(raw: dict, text: str, session=None) -> dict:
     intent = str(raw.get("intent", "smalltalk")).strip()
     if intent not in INTENTS:
         intent = "smalltalk"
@@ -181,14 +198,28 @@ def _normalize(raw: dict, text: str) -> dict:
             menu._alias_matches(low, d["name"].lower())
             or any(menu._alias_matches(low, a) for a in d["aliases"]))
 
-    if guard_on and intent == "order" and not has_ref:
-        items = [x for x in items if _named(x["dish"])]
-        if not _named(dish):
+    def _on_the_table(d):
+        """A pronoun can only point at something already in play. "Make it the
+        cheese ones" is a reference, not a licence to pick any dish on the menu
+        — the local model did exactly that and removed a garlic bread nobody had
+        ordered."""
+        if d is None or session is None:
+            return False
+        if getattr(session, "last_dish", None) and d["name"] == session.last_dish["name"]:
+            return True
+        return any(l["dish"]["name"] == d["name"] for l in getattr(session, "cart", []))
+
+    def _allowed(d):
+        return _named(d) or (has_ref and _on_the_table(d))
+
+    if guard_on and intent == "order":
+        items = [x for x in items if _allowed(x["dish"])]
+        if not _allowed(dish):
             dish = None
-        if not items and not dish:
+        if not items and not dish and not has_ref:
             intent = "show_menu"   # wanted to order but named nothing -> ask
-    if guard_on and intent in ("remove", "replace") and not has_ref:
-        if not _named(remove_dish):
+    if guard_on and intent in ("remove", "replace"):
+        if not _allowed(remove_dish):
             remove_dish = None
         if intent == "remove" and remove_dish is None:
             intent = "smalltalk"   # vague input -> don't touch the cart
@@ -204,7 +235,7 @@ def _normalize(raw: dict, text: str) -> dict:
         "quantity": qty,
         "qty_explicit": qty_explicit,
         "ways": ways if ways >= 2 else 2,
-        "reply": str(raw.get("reply", "") or "").strip(),
+        "reply": _clean_reply(raw.get("reply")),
         "llm": True,
     }
 
@@ -220,7 +251,8 @@ def _via_groq(text: str, session) -> dict:
         "messages": _messages(text, session),
         "response_format": {"type": "json_object"},
         "temperature": 0.2,
-        "max_tokens": 200,
+        "max_tokens": config.GROQ_LLM_MAX_TOKENS,
+        "reasoning_effort": config.GROQ_REASONING_EFFORT,
     }
     r = net.session().post(
         config.GROQ_CHAT_URL,
@@ -229,7 +261,7 @@ def _via_groq(text: str, session) -> dict:
     )
     r.raise_for_status()
     raw = json.loads(r.json()["choices"][0]["message"]["content"])
-    return _normalize(raw, text)
+    return _normalize(raw, text, session)
 
 
 def _local_prompt(session) -> str:
@@ -266,7 +298,7 @@ def _via_local(text: str, session) -> dict:
     r = requests.post(OLLAMA_URL, json=payload, timeout=20)
     r.raise_for_status()
     raw = json.loads(r.json()["message"]["content"])
-    return _normalize(raw, text)
+    return _normalize(raw, text, session)
 
 
 def warm_local():
@@ -327,7 +359,8 @@ def translate(text: str, language_name: str) -> str:
                 {"role": "user", "content": text},
             ],
             "temperature": 0,
-            "max_tokens": 200,
+            "max_tokens": config.GROQ_LLM_MAX_TOKENS,
+            "reasoning_effort": config.GROQ_REASONING_EFFORT,
         }
         r = net.session().post(config.GROQ_CHAT_URL,
                           headers={"Authorization": f"Bearer {settings.groq_key()}"},

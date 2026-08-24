@@ -73,8 +73,18 @@ GROQ_STT_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 # When rules can't classify an utterance: use Groq's fast LLM if online
 # (~1 s), else the local LFM2 via Ollama (~6 s, offline).
 GROQ_CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
-# 70B is far more reliable at intent/slot extraction than 8B (still ~1-2 s, free).
-GROQ_LLM_MODEL = "llama-3.3-70b-versatile"
+# Groq retires models without warning. llama-3.3-70b vanished mid-service and
+# every call came back 404, silently dropping every table onto the rule parser.
+# tools_doctor.py now checks this model still exists, so next time you hear it
+# from a health check rather than from a guest.
+GROQ_LLM_MODEL = "openai/gpt-oss-20b"
+# gpt-oss is a REASONING model: it spends completion tokens thinking before it
+# writes anything. At the old 200-token budget the thinking used the lot, no
+# JSON was ever emitted, and Groq rejected the call with json_validate_failed.
+GROQ_LLM_MAX_TOKENS = 1200
+# "low" keeps the thinking short — measured 119 completion tokens and ~900 ms,
+# against 358 tokens and ~1040 ms when left to its own devices.
+GROQ_REASONING_EFFORT = "low"
 
 # --- Text to speech ---
 # Primary: Piper neural TTS (offline, natural). Fallback: espeak-ng.

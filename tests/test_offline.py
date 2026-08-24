@@ -131,6 +131,37 @@ order("one large margarita and too cold coffees",
 order("one margherita not too spicy", [("Regular Margherita", 1)])
 order("i want to order a margherita", [("Regular Margherita", 1)])
 
+print("\nAnswers a guest can actually use")
+# "I'm allergic to gluten, what can I eat" used to be answered with the last
+# dish mentioned — which contained gluten.
+_r = intents.parse_intent("i'm allergic to gluten, what can i eat")
+_s = Session(); _s.last_dish = menu.find_dish("margherita")
+_a = dialog.handle(_r, _s)
+check("Without gluten" in _a, "an allergy with no dish named lists safe options")
+check("Margherita" not in _a, "and does not offer the dish that contains it")
+# ...but a question about one dish stays a question about that dish.
+_s2 = Session(); _s2.last_dish = menu.find_dish("margherita")
+check("contains" in dialog.handle(
+    intents.parse_intent("does the margherita have dairy"), _s2),
+    "a direct question still gets a direct answer")
+_s3 = Session(); _s3.last_dish = menu.find_dish("margherita")
+check("Margherita" in dialog.handle(
+    intents.parse_intent("does it contain nuts"), _s3),
+    "'it' still means the dish we were just discussing")
+
+# Sixty-six pizza names read aloud is a wall of sound.
+_big = dialog.handle(intents.parse_intent("what pizzas do you have"), Session())
+check("66 pizzas" in _big and len(_big) < 200, "a big section is summarised, not recited")
+check("Choco Lava Cake" in dialog.handle(
+    intents.parse_intent("show me the desserts"), Session()),
+    "a small section is still read out in full")
+
+# "give me a medium one" names a size but no dish.
+_s4 = Session(); _s4.last_dish = menu.find_dish("veg extravaganza")
+dialog.handle(intents.parse_intent("okay give me a medium one"), _s4)
+check([(_s4.line_label(l), l["qty"]) for l in _s4.cart] == [("Medium Veg. Extravaganza", 1)],
+      "a size given without a dish is honoured")
+
 print("\nSizes and labels")
 order("i want a paneer momo in gravy and one peri peri fries large",
       [("Paneer Momo (Gravy)", 1), ("Large Peri-Peri Fries", 1)])

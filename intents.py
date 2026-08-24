@@ -198,10 +198,20 @@ def parse_intent(text: str) -> dict:
 
     # Pronoun order referencing the dish just discussed ("add it", "yes add that",
     # "sure, order one"). dish stays None -> dialog fills it from session context.
-    if (menu.find_dish(t) is None and
-            has("add it", "add that", "add this", "order it", "order that",
-                "have it", "get it", "add one", "yes add", "sure add", "yes please add",
-                "add to my order", "put it in", "i'll take it", "ill take it")):
+    # Pronoun order referencing the dish just discussed. "Give me a medium one"
+    # is the common shape after asking about a dish — it names a size and no
+    # dish at all, and used to fall through to "I didn't catch that".
+    _REFERS = ("add it", "add that", "add this", "order it", "order that",
+               "have it", "get it", "add one", "yes add", "sure add",
+               "yes please add", "add to my order", "put it in",
+               "i'll take it", "ill take it", "i'll take one", "ill take one",
+               "give me one", "give me a", "make it a", "make it one",
+               "i'll have one", "ill have one", "one of those", "one of them",
+               "that one", "this one", "the same")
+    if menu.find_dish(t) is None and (
+            has(*_REFERS) or re.search(r"\b(one|ones)\b", t) and has(
+                "medium", "large", "regular", "small", "steam", "gravy",
+                "pan fry", "deep fry", "fried")):
         return {"intent": "order_item", "text": text, "dish": None,
                 "quantity": _quantity(t), "use_context": True}
 

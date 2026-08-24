@@ -10,6 +10,8 @@ Accepts intents from either source:
 Facts (prices, allergens, bill math) are always computed here from menu.py /
 session.py — never taken from the model.
 """
+import re
+
 import menu
 from session import Session
 
@@ -24,6 +26,26 @@ _ALIASES = {
 def canonical(intent: str) -> str:
     """Map either naming scheme (rules or LLM) onto the internal one."""
     return _ALIASES.get(intent, intent)
+
+
+# The allergen words a guest actually uses, mapped to the menu's tags.
+_ALLERGEN_WORDS = {
+    "gluten": "gluten", "wheat": "gluten", "maida": "gluten",
+    "dairy": "dairy", "milk": "dairy", "lactose": "dairy", "cheese": "dairy",
+    "paneer": "dairy", "butter": "dairy",
+    "soy": "soy", "soya": "soy",
+    "nut": "nuts", "nuts": "nuts", "peanut": "nuts", "peanuts": "nuts",
+    "egg": "egg", "eggs": "egg",
+}
+
+
+def _allergen_named(text: str):
+    """Which allergen did the guest say they can't have?"""
+    low = (text or "").lower()
+    for word, tag in _ALLERGEN_WORDS.items():
+        if re.search(rf"\b{word}\b", low):
+            return tag
+    return None
 
 
 def _diet(dish: dict) -> str:
@@ -51,10 +73,15 @@ def handle(result: dict, session: Session) -> str:
             if not menu.is_available(dish):               # 86'd in the admin
                 unavailable.append(dish["name"])
                 continue
-            size = it.get("size") or menu.default_size(dish)
+            # "give me a medium one" names a size but not a dish. Whoever
+            # resolved the dish, the size is still sitting in what they said —
+            # so look there before assuming the cheapest option and telling the
+            # guest they could have had the one they just asked for.
+            said = it.get("size") or menu.find_size(result.get("text", ""), dish)
+            size = said or menu.default_size(dish)
             # If the dish comes in sizes and the guest didn't pick one, we take
             # the base size and say so, so they can trade up.
-            if menu.size_names(dish) and not it.get("size"):
+            if menu.size_names(dish) and not said:
                 assumed.append(dish)
             session.add_dish(dish, it["quantity"], size)
             label = menu.label_for(dish, size)
@@ -159,6 +186,25 @@ def handle(result: dict, session: Session) -> str:
 
     if intent == "ask_allergen":
         dish = result.get("dish") or session.last_dish
+        # "I'm allergic to gluten, what can I eat?" names an allergen and no
+        # dish. Answering about whatever they last mentioned is worse than
+        # useless when that dish contains the very thing they can't have.
+        said = (result.get("text", "") or "").lower()
+        avoid = _allergen_named(said)
+        # Only offer alternatives when they asked what they CAN have. "Does the
+        # margherita have dairy" and "does it contain nuts" are questions about
+        # one dish, and answering either with a menu tour would be a non-answer.
+        refers = re.search(r"\b(it|this|that|these|those|the one)\b", said)
+        if avoid and not result.get("dish") and not refers:
+            safe = [d for d in menu.all_dishes()
+                    if avoid not in d["allergens"] and menu.is_available(d)]
+            if not safe:
+                return (f"Honestly, everything on our menu has {avoid} in it. "
+                        f"Let me get someone from the kitchen for you.")
+            names = ", ".join(d["name"] for d in safe[:6])
+            more = f", and {len(safe) - 6} more" if len(safe) > 6 else ""
+            return (f"Without {avoid} we've got {names}{more}. "
+                    f"For a serious allergy I'll have the kitchen confirm before you order.")
         if not dish:
             return "Which one should I check?"
         session.last_dish = dish
@@ -191,18 +237,30 @@ def handle(result: dict, session: Session) -> str:
         cat = result.get("category")
         if not cat:
             return "Which one — pizzas, garlic bread, burgers, momos, fries, or drinks?"
-        dishes = menu.by_category(cat)
-        def _q(d):
-            base = menu.price_for(d, menu.default_size(d))
-            return f"{d['name']} from {base}" if menu.size_names(d) else f"{d['name']} at {base}"
-        names = ", ".join(_q(d) for d in dishes[:8])
-        more = f" and {len(dishes) - 8} more" if len(dishes) > 8 else ""
+        dishes = [d for d in menu.by_category(cat) if menu.is_available(d)]
+        if not dishes:
+            return "Nothing in that section today, sorry. What else can I get you?"
         label = {"Starter": "starters", "Dessert": "desserts", "Beverage": "drinks",
                  "Mocktail": "mocktails", "Momo": "momos", "Burger": "burgers",
                  "Pizza": "pizzas", "Calzone": "calzones", "Calizza": "calizzas",
                  "Parcel": "parcels", "Farali": "the farali menu",
                  "Fries": "fries", "Garlic Bread": "garlic breads"}.get(cat, cat.lower())
-        return f"In {label}: {names} rupees{more}. Want any of those?"
+
+        def _q(d):
+            base = menu.price_for(d, menu.default_size(d))
+            return f"{d['name']} from {base}" if menu.size_names(d) else f"{d['name']} at {base}"
+
+        # This is spoken aloud. Reeling off eight names and "58 more" is a wall
+        # of sound nobody can hold in their head — so for a big section, say how
+        # many there are, name the cheapest few as an anchor, and let them steer.
+        if len(dishes) > 6:
+            cheap = min(menu.price_for(d, menu.default_size(d)) for d in dishes)
+            picks = ", ".join(d["name"] for d in dishes[:3])
+            return (f"We've got {len(dishes)} {label}, from {cheap} rupees — "
+                    f"{picks} and plenty more. Any flavour you're after, "
+                    f"or shall I read a few out?")
+        names = ", ".join(_q(d) for d in dishes)
+        return f"In {label}: {names} rupees. Want any of those?"
 
     if intent == "show_menu":
         pizzas = ", ".join(d["name"] for d in menu.by_category("Pizza")[:3])

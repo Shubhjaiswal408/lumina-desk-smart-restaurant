@@ -112,6 +112,19 @@ report(OK if len(got) == 2 else BAD, "rule parser (the instant path)",
        f"{ms:.1f} ms — {got}")
 
 if key:
+    # Groq retires models. When llama-3.3-70b went, every call 404'd and the
+    # tables quietly ran on rules for who knows how long. Check it still exists.
+    try:
+        import requests
+        ids = {m["id"] for m in requests.get(
+            "https://api.groq.com/openai/v1/models",
+            headers={"Authorization": f"Bearer {key}"}, timeout=10).json()["data"]}
+        for label, want in (("chat", config.GROQ_LLM_MODEL),
+                            ("speech", config.GROQ_STT_MODEL)):
+            report(OK if want in ids else BAD, f"{label} model exists on Groq", want)
+    except Exception as e:
+        report(WARN, "Groq model list", str(e))
+
     try:
         out, ms = timed(lambda: llm._via_groq(PHRASE, Session()))
         report(OK, f"Groq {config.GROQ_LLM_MODEL}",
