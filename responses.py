@@ -17,11 +17,16 @@ GREETINGS = [
     "Yep, tell me.",
 ]
 
-# First wake of a session. Says who it is and the two things guests ask most.
-WELCOME = (
-    "Hey, welcome! I'm Lumina. Tell me what you'd like and I'll get it in — "
-    "I can read out the menu, check what's in a dish, or bring you the bill."
-)
+# First wake of a session. This one has to be SHORT.
+#
+# It used to be two sentences explaining what Lumina could do — 142 characters,
+# which the neural voice takes about nine seconds to say. A guest says "Hey
+# Lumina", hears a speech start, waits, decides it didn't hear them, and says it
+# again — and that second "Hey Lumina" lands as their order. Watched it happen.
+#
+# Everything the old line explained is already printed on the screen in front of
+# them. Say hello and get out of the way.
+WELCOME = "Hi! What can I get you?"
 
 
 def greeting() -> str:

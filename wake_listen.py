@@ -18,6 +18,7 @@ Stop: Ctrl-C
 import json
 import os
 import queue
+import re
 import sys
 import time
 
@@ -140,6 +141,16 @@ def understand(transcript: str, session) -> dict:
     return rules
 
 
+_WAKE_ECHO = re.compile(
+    r"^\W*(hey|hi|hello|ok|okay|hay|a)?\W*(lumina|lumin|luminar|lumena|numina|"
+    r"looming|lamina)\W*$", re.I)
+
+
+def _is_wake_echo(text: str) -> bool:
+    """Is this just the wake word said again, rather than an actual command?"""
+    return bool(_WAKE_ECHO.match((text or "").strip()))
+
+
 def converse(capture, model, session, first_time: bool) -> None:
     """Hold a multi-turn conversation until the guest goes quiet or says they're
     done. No wake word needed between turns."""
@@ -163,6 +174,13 @@ def converse(capture, model, session, first_time: bool) -> None:
             speak("Sorry, I didn't catch that — could you say it again?")
             continue
         misses = 0
+
+        # A guest who isn't sure it heard them says the wake word again. That
+        # second "Hey Lumina" is not an order — treat it as them still waiting,
+        # and just listen again rather than answering a question nobody asked.
+        if _is_wake_echo(transcript):
+            print(f'  (heard the wake word again, still listening)', flush=True)
+            continue
 
         print(f'  guest said ({engine}/{wlang}): "{transcript}"', flush=True)
         t0 = time.time()
