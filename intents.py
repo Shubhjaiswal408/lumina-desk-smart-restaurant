@@ -81,6 +81,14 @@ def _order_items(t: str) -> list:
         seen.add(d["name"])
         items.append({"dish": d, "quantity": _quantity(clause),
                       "size": menu.find_size(clause, d) or ""})
+    if not items:
+        # Splitting found nothing. Whisper punctuates where it pleases —
+        # "Cheezy, Peri, Peri, Fries." is one dish chopped into four fragments,
+        # none of which is anything. Try the sentence whole before giving up.
+        d = menu.find_dish(t)
+        if d:
+            items.append({"dish": d, "quantity": _quantity(t),
+                          "size": menu.find_size(t, d) or ""})
     return items
 
 

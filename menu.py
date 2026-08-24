@@ -243,7 +243,7 @@ MENU = [
     _d("Paneer Tikka Garlic Bread", 150, "Garlic Bread", ["bread", "garlic butter", "tikka marinated paneer"], ["gluten", "dairy"], ["paneer tikka garlic bread"], prep=10),
 
     # ------------------------------------------------------ GARLIC FINGERS -
-    _d("Cheesy Garlic Fingers", 100, "Garlic Bread", ["bread fingers", "garlic butter", "mozzarella"], ["gluten", "dairy"], ["cheesy garlic fingers"], prep=10),
+    _d("Cheesy Garlic Fingers", 100, "Garlic Bread", ["bread fingers", "garlic butter", "mozzarella"], ["gluten", "dairy"], ["cheesy garlic fingers", "cheezy garlic fingers"], prep=10),
     _d("Chilly Cheese Garlic Fingers", 110, "Garlic Bread", ["bread fingers", "garlic butter", "green chilli", "mozzarella"], ["gluten", "dairy"], ["chilly cheese garlic fingers"], prep=10),
     _d("Veggie Garlic Fingers", 120, "Garlic Bread", ["bread fingers", "garlic butter", "mixed vegetables"], ["gluten", "dairy"], ["veggie garlic fingers"], prep=10),
     _d("Peri-Peri Paneer Garlic Fingers", 130, "Garlic Bread", ["bread fingers", "garlic butter", "peri-peri paneer"], ["gluten", "dairy"], ["peri peri paneer garlic fingers"], prep=10),
@@ -270,7 +270,7 @@ MENU = [
     _d("Crispy Onion Rings", 99, "Starter", ["onion", "batter", "breadcrumbs"], ["gluten"], ["crispy onion rings", "onion rings"], prep=10, desc="5 pieces"),
     _d("Bombay Batata Vada Shots", 99, "Starter", ["potato", "gram flour", "spices"], [], ["bombay batata vada shots", "batata vada"], prep=10, desc="7 pieces"),
     _d("Cheese Ring", 99, "Starter", ["mozzarella", "batter", "breadcrumbs"], ["gluten", "dairy"], ["cheese ring", "cheese rings"], prep=10, desc="2 pieces"),
-    _d("Cheesy Nachos", 99, "Starter", ["corn nachos", "cheese sauce"], ["gluten", "dairy"], ["cheesy nachos"], prep=8),
+    _d("Cheesy Nachos", 99, "Starter", ["corn nachos", "cheese sauce"], ["gluten", "dairy"], ["cheesy nachos", "cheezy nachos"], prep=8),
     _d("Veg. Cheese Mexican Nachos", 149, "Starter", ["corn nachos", "cheese sauce", "salsa", "jalapenos", "mixed vegetables"], ["gluten", "dairy"], ["veg cheese mexican nachos", "mexican nachos"], prep=10),
     _d("Spicy Chilly Potato", 159, "Starter", ["potato", "chilli sauce", "capsicum", "onion"], ["gluten", "soy"], ["spicy chilly potato", "chilli potato"], prep=12, desc="350 gm"),
 
@@ -279,11 +279,11 @@ MENU = [
        sizes={"Medium": 90, "Large": 120}, prep=8),
     _d("Peri-Peri Fries", 110, "Fries", ["potato fries", "peri-peri seasoning"], [], ["peri peri fries"],
        sizes={"Medium": 110, "Large": 150}, prep=8),
-    _d("Cheesy Salted Fries", 140, "Fries", ["potato fries", "cheese sauce"], ["dairy"], ["cheesy salted fries"],
+    _d("Cheesy Salted Fries", 140, "Fries", ["potato fries", "cheese sauce"], ["dairy"], ["cheesy salted fries", "cheezy salted fries"],
        sizes={"Medium": 140, "Large": 180}, prep=8),
-    _d("Cheesy Peri-Peri Fries", 160, "Fries", ["potato fries", "peri-peri seasoning", "cheese sauce"], ["dairy"], ["cheesy peri peri fries"],
+    _d("Cheesy Peri-Peri Fries", 160, "Fries", ["potato fries", "peri-peri seasoning", "cheese sauce"], ["dairy"], ["cheesy peri peri fries", "cheezy peri peri fries"],
        sizes={"Medium": 160, "Large": 210}, prep=8),
-    _d("Veg. Cheesy Peri-Peri Fries", 180, "Fries", ["potato fries", "peri-peri seasoning", "cheese sauce", "mixed vegetables"], ["dairy"], ["veg cheesy peri peri fries"],
+    _d("Veg. Cheesy Peri-Peri Fries", 180, "Fries", ["potato fries", "peri-peri seasoning", "cheese sauce", "mixed vegetables"], ["dairy"], ["veg cheesy peri peri fries", "veg cheezy peri peri fries"],
        sizes={"Medium": 180, "Large": 240}, prep=8),
     _d("Veg. Cheesy Jalapenos Peri-Peri Fries", 190, "Fries", ["potato fries", "peri-peri seasoning", "cheese sauce", "jalapenos"], ["dairy"], ["veg cheesy jalapenos peri peri fries", "jalapeno fries"],
        sizes={"Medium": 190, "Large": 260}, prep=8),
@@ -312,7 +312,7 @@ MENU = [
        sizes={"Regular": 120, "Veeba Cheese Blend": 130, "Amul Cheese Slice": 130, "Cheese Ring": 170}, prep=10),
     _d("Veg. Cheese Burger", 120, "Burger", ["burger bun", "veg patty", "cheese"], ["gluten", "dairy"], ["veg cheese burger"],
        sizes={"Regular": 120, "Amul Cheese Slice": 140, "Cheese Ring": 170}, prep=10),
-    _d("Cheesy Peri-Peri Burger", 120, "Burger", ["burger bun", "veg patty", "peri-peri seasoning", "cheese"], ["gluten", "dairy"], ["cheesy peri peri burger"],
+    _d("Cheesy Peri-Peri Burger", 120, "Burger", ["burger bun", "veg patty", "peri-peri seasoning", "cheese"], ["gluten", "dairy"], ["cheesy peri peri burger", "cheezy peri peri burger"],
        sizes={"Regular": 120, "Amul Cheese Slice": 140, "Cheese Ring": 170}, prep=10),
     _d("Corn & Cheese Burger", 120, "Burger", ["burger bun", "sweet corn", "cheese"], ["gluten", "dairy"], ["corn and cheese burger"],
        sizes={"Regular": 120, "Amul Cheese Slice": 140, "Cheese Ring": 170}, prep=10),
@@ -561,7 +561,7 @@ def find_size(text: str, dish: dict):
     sizes = dish.get("sizes") or {}
     if not sizes:
         return None
-    t = (text or "").lower()
+    t = _normalise(text)
     extra = {"small": "Regular", "reg": "Regular", "med": "Medium",
              "big": "Large", "steamed": "Steam", "fried": "Deep Fry"}
     for s in sizes:
@@ -573,9 +573,18 @@ def find_size(text: str, dish: dict):
     return None
 
 
+def _normalise(text: str) -> str:
+    """Punctuation must never split a dish name. Whisper writes what it hears —
+    "Cheezy, Peri, Peri, Fries." — and commas inside a name used to stop it
+    matching anything at all."""
+    # Collapse the gaps too, or "a, b" becomes "a  b" and the alias,
+    # which has one space, stops matching.
+    return _re.sub(r"\s+", " ", _re.sub(r"[,.!?;:]+", " ", (text or "").lower())).strip()
+
+
 def find_dish(text: str):
     """Return the menu dish whose longest alias/name appears in `text`."""
-    t = (text or "").lower()
+    t = _normalise(text)
     best, best_len = None, 0
     for dish in all_dishes():
         for alias in [dish["name"].lower()] + dish["aliases"]:

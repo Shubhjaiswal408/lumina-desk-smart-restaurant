@@ -13,6 +13,8 @@ import os
 import select
 import shutil
 import subprocess
+import threading
+import time
 
 import config
 
@@ -52,6 +54,83 @@ def _phrases(text: str) -> list[str]:
     return [text[:cut + 1].strip(), text[cut + 1:].strip()]
 
 
+
+# --- one long-lived speaker -------------------------------------------------
+# Opening the ALSA device per utterance loses the start of the line. The
+# reSpeaker's amplifier needs a moment to come out of mute, and everything
+# spoken during that moment is gone — "Hi! What can I get you?" reached the
+# table as "…what can I get you". The Edge audio already carries 220 ms of
+# leading silence and it still wasn't enough.
+#
+# Padding every reply with more silence would fix it by making every reply
+# slower, which is the wrong trade. Instead one aplay stays open for the life of
+# the service, so the amplifier never mutes and nothing has to wake up. Silence
+# is written between utterances to hold the device.
+#
+# Everything is resampled to one rate on the way in, because a single stream can
+# only have one: Piper is 22.05 kHz, the online voices are 24 kHz.
+SPEAK_RATE = 24000
+_PREROLL = b"\x00" * (SPEAK_RATE // 10)      # 50 ms, so the first sample isn't a click
+
+
+class _Speaker:
+    """A single ALSA stream that stays open, so speech never starts mid-word."""
+
+    def __init__(self):
+        self.proc = None
+        self.ends_at = 0.0        # when the audio written so far finishes playing
+
+    def _ensure(self):
+        if self.proc is None or self.proc.poll() is not None:
+            self.proc = subprocess.Popen(
+                ["aplay", "-q", "-t", "raw", "-f", "S16_LE",
+                 "-r", str(SPEAK_RATE), "-c", "1", "-D", config.PLAYBACK_DEVICE],
+                stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
+            self.proc.stdin.write(_PREROLL)
+            self.proc.stdin.flush()
+
+    def write(self, pcm: bytes, rate: int = SPEAK_RATE):
+        """Play raw 16-bit mono PCM, resampling if it isn't our rate."""
+        if not pcm:
+            return
+        self._ensure()
+        if rate != SPEAK_RATE:
+            import numpy as np
+            a = np.frombuffer(pcm, dtype=np.int16)
+            idx = (np.arange(int(len(a) * SPEAK_RATE / rate)) * rate / SPEAK_RATE)
+            pcm = a[np.clip(idx.astype(int), 0, len(a) - 1)].tobytes()
+        try:
+            self.proc.stdin.write(pcm)
+            self.proc.stdin.flush()
+        except (BrokenPipeError, ValueError):
+            self.proc = None            # died; the next line reopens it
+            return
+        # aplay buffers, so writing is not the same as being heard. Track when
+        # this audio will actually finish — the conversation loop must not start
+        # listening while Lumina is still mid-sentence.
+        secs = len(pcm) / 2 / SPEAK_RATE
+        now = time.monotonic()
+        self.ends_at = max(self.ends_at, now) + secs
+
+    def wait(self):
+        """Block until everything written has been heard."""
+        left = self.ends_at - time.monotonic()
+        if left > 0:
+            time.sleep(left)
+
+    def drain(self, seconds: float):
+        """Hold the device with silence so it never mutes between replies."""
+        self._ensure()
+        try:
+            self.proc.stdin.write(b"\x00" * int(SPEAK_RATE * 2 * seconds))
+            self.proc.stdin.flush()
+        except (BrokenPipeError, ValueError):
+            self.proc = None
+
+
+_speaker = _Speaker()
+
+
 class _PiperProc:
     """A resident Piper process for one voice (model stays loaded)."""
     def __init__(self, voice):
@@ -82,11 +161,6 @@ class _PiperProc:
         payload = "\n".join(_phrases(text.replace("\n", " "))) + "\n"
         self.proc.stdin.write(payload.encode("utf-8"))
         self.proc.stdin.flush()
-        aplay = subprocess.Popen(
-            ["aplay", "-q", "-r", str(self.sr), "-f", "S16_LE", "-c", "1",
-             "-D", config.PLAYBACK_DEVICE],
-            stdin=subprocess.PIPE,
-        )
         fd = self.proc.stdout.fileno()
         first, got = True, False
         while True:
@@ -95,15 +169,11 @@ class _PiperProc:
                 chunk = os.read(fd, 4096)
                 if not chunk:
                     break
-                aplay.stdin.write(chunk)   # play as it generates
+                _speaker.write(chunk, self.sr)   # play as it generates
                 got, first = True, False
             else:
                 break  # gap after audio (or nothing produced) -> utterance done
-        try:
-            aplay.stdin.close()
-        except Exception:
-            pass
-        aplay.wait()
+        _speaker.wait()
         return got
 
 
@@ -149,6 +219,15 @@ _EDGE_TIMEOUT = 8.0        # a table in silence is worse than a robotic voice
 _MPG123 = shutil.which("mpg123")
 
 
+def _drain_to_speaker(pipe):
+    """Feed decoded PCM to the shared stream as mpg123 produces it."""
+    while True:
+        chunk = pipe.read(4096)
+        if not chunk:
+            return
+        _speaker.write(chunk)
+
+
 async def _edge_pump(text, voice, sink):
     import edge_tts
     import settings
@@ -175,21 +254,28 @@ def _edge(text, code) -> bool:
     except Exception:
         return False
 
+    # Decode to raw PCM rather than letting mpg123 own the device — the shared
+    # stream is what keeps the amplifier awake between replies.
     player = subprocess.Popen(
-        [_MPG123, "-q", "--no-control", "-a", config.PLAYBACK_DEVICE, "-"],
-        stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        [_MPG123, "-q", "-s", "--mono", "-r", str(SPEAK_RATE), "-"],
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    pump = threading.Thread(target=_drain_to_speaker, args=(player.stdout,), daemon=True)
+    pump.start()
     played = False
     try:
         played = asyncio.run(asyncio.wait_for(
             _edge_pump(text, voice, player.stdin), _EDGE_TIMEOUT))
     except Exception as e:
-        print(f"[TTS] online voice failed ({e}); using Piper", flush=True)
+        print(f"[TTS] online voice failed ({type(e).__name__}: {e}); "
+              f"using Piper", flush=True)
     finally:
         try:
             player.stdin.close()
         except Exception:
             pass
         player.wait()
+        pump.join(timeout=5)
+        _speaker.wait()
     return played
 
 

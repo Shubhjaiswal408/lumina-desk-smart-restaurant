@@ -102,7 +102,7 @@ def _handle_button(key: str, tbl, client):
 # dish list. dialog.py computes all of those from the menu, so the model's
 # wording is discarded for them no matter which brain produced it.
 FACT_INTENTS = {"check_bill", "split_bill", "pay", "ask_price", "ask_ingredient",
-                "ask_allergen", "show_menu", "show_category"}
+                "ask_allergen", "show_menu", "show_category", "recommend"}
 
 # Fact intents that are meaningless without knowing which dish is meant. If the
 # rules can't name one, the model gets a turn — it can resolve "what's in it?"
@@ -157,6 +157,7 @@ def converse(capture, model, session, first_time: bool) -> None:
     speak(responses.WELCOME if first_time else responses.greeting())
 
     misses = 0
+    last_reply = None
     while True:
         capture.flush()  # drop our own speech before listening again
         pcm = stt.record_utterance(capture)
@@ -237,6 +238,14 @@ def converse(capture, model, session, first_time: bool) -> None:
                      "vpa": settings.get("upi_vpa", config.UPI_VPA)}), retain=True)
                 mqtt_bus.publish_event(_MQTT, "pay_requested",
                                        table=config.TABLE_ID, total=total)
+
+        # Saying the exact same line twice means it didn't help the first time.
+        # Repeating six fries at a guest who just asked again is why the last
+        # attempt took four turns to order one thing.
+        if reply == last_reply and dialog.canonical(result["intent"]) in (
+                "show_menu", "show_category", "smalltalk"):
+            reply = "Sorry — which one would you like?"
+        last_reply = reply
 
         if lang.is_english(wlang):
             speak(reply)
