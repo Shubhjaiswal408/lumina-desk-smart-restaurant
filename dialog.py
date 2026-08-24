@@ -96,11 +96,14 @@ def handle(result: dict, session: Session) -> str:
         note = ""
         if unavailable:
             note = f" Sorry, the {unavailable[0]} is finished today."
-        if len(assumed) == 1:
-            others = [s for s in menu.size_names(assumed[0]) if s != menu.default_size(assumed[0])]
-            if others:
-                note += f" That's the {menu.default_size(assumed[0])} — {' or '.join(others)} if you'd prefer."
-        return f"I've added {summary} to your order, {total} rupees.{note} Anything else?"
+        # Spoken, not written. "I've added X to your order" is four seconds of
+        # throat-clearing before the guest hears anything they didn't know, and
+        # the natural voice is slower than Piper — so every clause costs.
+        #
+        # The assumed size needs no announcement either: `summary` already says
+        # "2 Paneer Momo (Steam)", so the guest hears the choice and can correct
+        # it. Spelling out the alternatives cost three seconds on every order.
+        return f"{summary} — {total} rupees.{note} Anything else?"
 
     if intent == "remove":
         dish = result.get("remove_dish") or result.get("dish") or session.last_dish
@@ -160,9 +163,9 @@ def handle(result: dict, session: Session) -> str:
                 f"Subtotal {int(session.subtotal())} rupees, plus {session.tax():.0f} rupees tax, "
                 f"for a total of {session.total():.0f} rupees."
             )
-        incl = f" including {session.tax():.0f} rupees GST" if mode == "inclusive" else ""
-        return (f"Your order is {session.line_summary()}. "
-                f"That comes to {session.total():.0f} rupees{incl}.")
+        incl = ", GST included" if mode == "inclusive" else ""
+        return (f"{session.line_summary()} — "
+                f"{session.total():.0f} rupees{incl}.")
 
     if intent == "split_bill":
         if session.is_empty():
