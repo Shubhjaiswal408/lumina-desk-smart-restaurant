@@ -110,7 +110,7 @@ MQTT_PORT = 1883
 
 # Display transport: "wifi" streams frames to the battery panel over MQTT;
 # "serial" pushes to a USB-connected panel.
-DISPLAY_TRANSPORT = "wifi"
+DISPLAY_TRANSPORT = "serial"
 
 # An empty table idle this long starts a fresh session (safety net for table
 # turnover; the main reset happens when the kitchen marks the order served).

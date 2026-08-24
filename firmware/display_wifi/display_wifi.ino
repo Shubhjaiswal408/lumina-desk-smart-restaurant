@@ -71,6 +71,7 @@ static uint32_t nextMqttAttempt = 0;
 static uint32_t mqttBackoff     = 1000;
 static uint32_t lastHeartbeat   = 0;
 static bool     everConnected   = false;
+static uint8_t  brokerTry       = 0;   // rotates saved <-> compiled address
 
 void beep(uint16_t ms = 60) {
   tone(BUZZER, 2000, ms);
@@ -161,14 +162,20 @@ IPAddress resolveBroker() {
     }
     Serial.println("[mdns] no answer");
   }
+  // Alternate between the remembered address and the compiled one. Always
+  // preferring the remembered one was a trap: when the Pi moved and mDNS was
+  // unavailable, the panel retried a dead address forever and never tried the
+  // fallback that would have worked. Taking turns means a stale entry costs one
+  // wasted attempt, not the whole deployment.
   String saved = prefs.getString("broker", "");
   IPAddress ip;
-  if (saved.length() && ip.fromString(saved)) {
-    Serial.printf("[mqtt] using last known good %s\n", saved.c_str());
+  bool useSaved = saved.length() && (brokerTry++ % 2 == 0);
+  if (useSaved && ip.fromString(saved)) {
+    Serial.printf("[mqtt] trying last known good %s\n", saved.c_str());
     return ip;
   }
   ip.fromString(MQTT_BROKER);
-  Serial.printf("[mqtt] using compiled fallback %s\n", MQTT_BROKER);
+  Serial.printf("[mqtt] trying compiled fallback %s\n", MQTT_BROKER);
   return ip;
 }
 
