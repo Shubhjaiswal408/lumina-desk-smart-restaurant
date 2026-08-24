@@ -2,6 +2,10 @@
 Description=Lumina Desk — Voice Assistant (wake word, ordering)
 After=network-online.target mosquitto.service sound.target
 Wants=network-online.target
+# An appliance must never stop trying. Without this, five quick
+# failures inside ten seconds make systemd give up for good, and the
+# table stays dead until somebody SSHs in.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple

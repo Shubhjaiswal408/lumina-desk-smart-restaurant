@@ -12,6 +12,7 @@ reply) the oldest frames are dropped instead of overflowing the hardware.
 """
 import queue
 import sys
+import time
 
 import numpy as np
 import sounddevice as sd
@@ -27,15 +28,38 @@ class AudioCapture:
         self._stream = None
         self._open()
 
-    def _open(self):
-        self._stream = sd.InputStream(
-            device=config.INPUT_DEVICE_INDEX,
-            samplerate=config.SAMPLE_RATE,
-            channels=config.CAPTURE_CHANNELS,
-            dtype="int16",
-            blocksize=FRAME,
-            callback=self._cb,
-        )
+    def _open(self, wait: bool = True):
+        """Open the microphone, waiting for it to turn up if it hasn't yet.
+
+        At boot the USB mic is often enumerated after the service starts, and a
+        table that dies because it was three seconds early is a table somebody
+        has to go and fix. Waiting also covers a mic knocked loose mid-service:
+        plug it back in and the assistant resumes on its own.
+        """
+        delay, waited = 1.0, 0.0
+        while True:
+            try:
+                self._stream = sd.InputStream(
+                    device=config.INPUT_DEVICE_INDEX,
+                    samplerate=config.SAMPLE_RATE,
+                    channels=config.CAPTURE_CHANNELS,
+                    dtype="int16",
+                    blocksize=FRAME,
+                    callback=self._cb,
+                )
+                if waited:
+                    print(f"[audio] microphone ready after {waited:.0f}s", flush=True)
+                return
+            except Exception as e:
+                if not wait:
+                    raise
+                if waited == 0:
+                    print(f"[audio] waiting for the microphone ({e})", flush=True)
+                time.sleep(delay)
+                waited += delay
+                delay = min(delay * 1.5, 15.0)
+                sd._terminate()      # re-scan the device list, or it stays stale
+                sd._initialize()
 
     def _cb(self, indata, frames, time_info, status):
         # Runs on PortAudio's thread. Keep it tiny: copy channel 0 and enqueue.
