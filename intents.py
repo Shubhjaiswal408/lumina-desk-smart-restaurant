@@ -183,8 +183,17 @@ def parse_intent(text: str) -> dict:
         if cat:
             return {"intent": "show_category", "text": text, "category": cat}
 
-    # Menu
-    if has("menu", "what do you have", "what can i", "options", "specials", "recommend", "suggest"):
+    # Menu. "I'd like to order" names no dish — it is a request for the menu,
+    # not something to guess at. Without this it fell through to "I didn't quite
+    # catch that", which is a strange answer to a perfectly clear sentence.
+    if has("menu", "what do you have", "what can i", "options", "specials",
+           "recommend", "suggest"):
+        return {"intent": "show_menu", "text": text}
+    # ...and only when they haven't already said what they want: "I want to
+    # order a margherita" is an order, not a request for the menu.
+    if menu.find_dish(t) is None and has(
+            "place an order", "like to order", "want to order", "can i order",
+            "start an order", "take my order"):
         return {"intent": "show_menu", "text": text}
 
     # Call staff

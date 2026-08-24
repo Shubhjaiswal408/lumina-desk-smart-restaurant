@@ -207,16 +207,12 @@ def converse(capture, model, session, first_time: bool) -> None:
                    and bool(result.get("reply")))
         reply = result["reply"] if use_llm else det
 
-        if lang.is_english(wlang):
-            speak(reply)
-        else:
-            # LLM replies are already in the guest's language; translate det ones.
-            if not use_llm:
-                reply = llm.translate(reply, lang.display_name(wlang))
-            speak(reply, lang.espeak_code(wlang))
-
-        # Publish to the bus when the order changed; the display service (and any
-        # future subscriber) reacts. Also emit events for kitchen/staff later.
+        # Tell the bus BEFORE speaking. The ePaper is the slowest thing here — a
+        # colour refresh is ~26 s — and speak() blocks for the length of the
+        # reply. Saying "the QR is on your screen" and only then starting the
+        # panel meant the guest stared at a stale screen for the whole sentence
+        # plus the whole refresh. Now the panel is already drawing while Lumina
+        # talks.
         if _MQTT:
             if _cart_sig(session) != before:
                 mqtt_bus.publish_order(_MQTT, session)
@@ -238,9 +234,17 @@ def converse(capture, model, session, first_time: bool) -> None:
                     print(f"  (payment log failed: {e})", flush=True)
                 _MQTT.publish(mqtt_bus.T_PAY, json.dumps(
                     {"amount": total, "upi_url": url, "ref": ref,
-                     "vpa": config.UPI_VPA}), retain=True)
+                     "vpa": settings.get("upi_vpa", config.UPI_VPA)}), retain=True)
                 mqtt_bus.publish_event(_MQTT, "pay_requested",
                                        table=config.TABLE_ID, total=total)
+
+        if lang.is_english(wlang):
+            speak(reply)
+        else:
+            # LLM replies are already in the guest's language; translate det ones.
+            if not use_llm:
+                reply = llm.translate(reply, lang.display_name(wlang))
+            speak(reply, lang.espeak_code(wlang))
 
         # Keep short conversation memory so corrections / pronouns resolve.
         session.remember("user", transcript)

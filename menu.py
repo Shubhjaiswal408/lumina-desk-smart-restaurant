@@ -39,7 +39,9 @@ def _pizza(name, r, m, l, ings, aliases=(), allergens=None, desc="", cat="Pizza"
 MENU = [
     # ------------------------------------------------------- VALUE PIZZA ----
     _pizza("Margherita", 89, 220, 270, [],          # base already has the cheese
-           ["margherita", "margarita", "plain pizza"],
+           # Whisper spells this a dozen ways; each one it gets wrong is an order lost.
+           ["margherita", "margarita", "margareta", "margaretta", "margharita",
+            "margrita", "marguerita", "margherit", "plain pizza", "plain cheese pizza"],
            desc="Margherita Magic, 100% Amul mozzarella"),
 
     _pizza("Schezwan Margherita", 110, 230, 290, ["schezwan sauce"], ["schezwan margherita"]),

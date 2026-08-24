@@ -266,12 +266,10 @@ def handle(result: dict, session: Session) -> str:
         return f"In {label}: {names} rupees. Want any of those?"
 
     if intent == "show_menu":
-        pizzas = ", ".join(d["name"] for d in menu.by_category("Pizza")[:3])
-        return (
-            f"We're all pure veg. Pizzas from ninety rupees — {pizzas} and many more — "
-            f"plus stuffed garlic breads, burgers, momos, calizza, fries, shakes and mocktails. "
-            f"Which section shall I run through?"
-        )
+        # Twenty seconds of sections, spoken at someone who just wants to order,
+        # is worse than no answer. Name the headline categories and hand the
+        # conversation straight back — the printed menu is on the table anyway.
+        return "Pizzas, garlic bread, burgers, momos, fries, shakes. Which one?"
 
     if intent == "call_staff":
         session.staff_called = True
@@ -293,8 +291,6 @@ def handle(result: dict, session: Session) -> str:
             return f"That's {session.total():.0f} rupees. Enjoy — just say Hey Lumina if you need anything."
         return "Cool — say Hey Lumina whenever you need me."
 
-    # smalltalk / unknown
-    return llm_reply or (
-        "Sorry, I didn't quite catch that. You can order food, check your bill, "
-        "ask about a dish, or call a server."
-    )
+    # smalltalk / unknown. Listing everything Lumina can do takes seven seconds
+    # and doesn't help someone who was probably just misheard — ask them again.
+    return llm_reply or "Sorry — say that again?"

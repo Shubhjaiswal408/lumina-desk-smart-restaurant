@@ -216,7 +216,7 @@ def speak(text, lang="en"):
     say) still can. Log them and show them on the ePaper; don't say them out
     loud into a room that asked for quiet.
     """
-    print(f"[Lumina/{lang}] {text}")
+    print(f"[Lumina/{lang}] {text}", flush=True)
     try:
         import settings
         state = settings.get("assistant_state")
