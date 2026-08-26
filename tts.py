@@ -90,7 +90,13 @@ class _Speaker:
     can't run ahead of synthesis.
     """
 
-    _KEEPALIVE = 0.2                   # seconds of silence per idle tick
+    _KEEPALIVE = 0.2                   # seconds of filler per idle tick
+
+    # Digital silence lets the reSpeaker's DSP close its noise gate, and the gate
+    # reopens a beat too late — which ate the "Hi" off the front of every reply
+    # even with the device held open. A whisper of dither, far below anything a
+    # room can hear, keeps the analogue path awake.
+    _DITHER_PEAK = 3                   # LSB, i.e. -80 dBFS
 
     def __init__(self):
         self.proc = None
@@ -140,7 +146,30 @@ class _Speaker:
                 if self._pending:
                     continue
                 if self.ends_at - time.monotonic() < self._KEEPALIVE:
-                    self._raw(b"\x00" * int(SPEAK_RATE * 2 * self._KEEPALIVE))
+                    self._raw(self._filler(self._KEEPALIVE))
+
+    @classmethod
+    def _filler(cls, seconds: float) -> bytes:
+        import numpy as np
+        n = int(SPEAK_RATE * seconds)
+        return np.random.randint(-cls._DITHER_PEAK, cls._DITHER_PEAK + 1,
+                                 n, dtype=np.int16).tobytes()
+
+    @staticmethod
+    def _trim_lead(pcm: bytes) -> bytes:
+        """Drop the silence the synthesiser puts in front.
+
+        The stream is already being held open with dither, so that silence adds
+        nothing but delay — and it is exactly the stretch during which the first
+        word used to disappear.
+        """
+        import numpy as np
+        a = np.frombuffer(pcm, dtype=np.int16)
+        loud = np.flatnonzero(np.abs(a) > 200)
+        if loud.size == 0:
+            return pcm
+        start = max(0, loud[0] - SPEAK_RATE // 50)     # keep 20 ms of run-up
+        return a[start:].tobytes()
 
     # --- speaking -------------------------------------------------------
     @staticmethod
@@ -170,7 +199,8 @@ class _Speaker:
             if self._streaming:
                 out, self._pending = bytes(self._pending), bytearray()
             elif len(self._pending) >= PREBUFFER * SPEAK_RATE * 2:
-                out, self._pending = bytes(self._pending), bytearray()
+                out = self._trim_lead(bytes(self._pending))
+                self._pending = bytearray()
                 self._streaming = True
             else:
                 return
