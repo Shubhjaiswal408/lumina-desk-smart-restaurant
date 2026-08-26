@@ -73,6 +73,67 @@ built around the ways they actually fail:
 
 ---
 
+## Everything it does
+
+### Taking an order
+
+- **Wake word "Hey Lumina"** — a custom on-device model, no cloud, no keyword service.
+- **Several dishes in one breath** — *"one large Margherita and two cold coffees"* becomes two lines with the right quantities and sizes.
+- **Sizes and variants** — pizzas in Regular/Medium/Large, momos by how they're cooked, burgers by which cheese, fries by size. Say one or don't; the reply tells you which you got.
+- **Corrections mid-sentence** — *"no wait, make it a large"*, *"actually remove one"*.
+- **Pronouns** — *"add it"*, *"two of those"*, *"what's in it?"* resolve against what was just discussed. A pronoun can only reach something already in play, never an arbitrary dish.
+- **Plurals** — *"two cold coffees"*, *"three margheritas"*.
+- **Answers to its own questions** — ask *"Want the Margherita?"* and *"yes"*, *"sure"*, *"haan"*, *"ok please"* all order it. A yes with nothing pending asks what you'd like instead of guessing.
+- **Mispronunciations and mis-transcriptions** — the menu carries the ways Whisper actually spells things (*margareta*, *cheezy*), and punctuation can't split a dish name in half.
+- **Any language** — understood and answered in the same one, with real Indian-English, Hindi and Gujarati voices.
+
+### Answering questions
+
+- **What's in a dish** — read from the menu database, never improvised.
+- **Allergens** — *"does the margherita have dairy?"* answers about that dish; *"I'm allergic to gluten, what can I eat?"* lists what's actually safe.
+- **Prices** — *"how much is a paneer momo?"* quotes every size and orders nothing.
+- **Sections** — *"what pizzas do you have?"* summarises 66 of them instead of reciting a wall of names; small sections are read in full.
+- **Recommendations** — the most-ordered dishes, ending in an offer you can just say yes to.
+- **The bill** — computed in Python from the menu. The model never touches a number.
+
+### Knowing when not to speak
+
+- **Filler is ignored.** Whisper answers silence with *"Okay."*, *"Exactly."*, *"Thank you."* — Lumina says nothing and keeps listening rather than holding a conversation with itself.
+- **Noise never reaches the recogniser.** The speech threshold tracks the room's own noise floor.
+- **A repeated wake word isn't an order** — someone unsure it heard them gets listened to, not answered.
+- **It doesn't repeat itself.** Saying the same line twice means it didn't help the first time.
+
+### At the table
+
+- **Live ePaper** — order, allergens, running bill, ready-time, kitchen status, UPI QR, thank-you.
+- **Three physical buttons** — call a server, show the bill, mute. They work with the microphone closed.
+- **Mute means the microphone is off** — the device is released, the LED ring goes dark, and the panel says so rather than inviting you to talk to something that isn't listening.
+
+### Paying
+
+- **Dynamic UPI QR** — one VPA, the exact amount per bill, no payment gateway.
+- **Automatic confirmation** — reads the merchant's payment emails over IMAP and settles the matching bill, deduplicated by transaction ID.
+- **Webhook** for a real gateway, and a **Mark paid** button for when neither applies.
+- **Feedback QR** that already knows which table it came from.
+
+### For the kitchen and the manager
+
+- **Live board** — tickets as they're spoken, wait timers, allergens flagged, one-tap New → Preparing → Ready → Served.
+- **Table lifecycle** — available, reserved, occupied, cleaning; payment banks the order and resets the table for the next party.
+- **Service requests** — *"bring water"* raises a banner until someone clears it.
+- **Menu editing** — change a price or mark something sold out and it's live for the voice immediately.
+- **Analytics** — revenue, average ticket, order-to-served time, peak hour, busiest tables, popular dishes.
+- **Terminal** — every service's logs in the browser, no SSH.
+- **Settings** — assistant on/muted/off, brain mode, API key, tax, UPI, voice and pace, wake sensitivity, end-of-speech pause, staff PIN. All live.
+
+### For whoever maintains it
+
+- **`tools_doctor.py`** — exercises every backend including the fallbacks, and checks the cloud models still exist. Groq retires them without warning; this is how you hear about it from a health check instead of a guest.
+- **`tests/test_offline.py`** — no mic, no network, no services. Every case is a mistake this system actually made.
+- **`tests/test_live.py`** — a whole guest journey against the running system.
+- **`tools_bench.py`** — times each stage of a turn.
+- **[Shooting script](docs/SHOOTING_SCRIPT.md)** — if you want to film it, including the rough edges worth planning around.
+
 ## The staff side
 
 Everything runs from one browser page on the LAN — `http://<pi>.local:8000`,
