@@ -96,7 +96,10 @@ class _Speaker:
     # reopens a beat too late — which ate the "Hi" off the front of every reply
     # even with the device held open. A whisper of dither, far below anything a
     # room can hear, keeps the analogue path awake.
-    _DITHER_PEAK = 3                   # LSB, i.e. -80 dBFS
+    # -80 dBFS was a guess and too quiet to be sure of holding a gate open.
+    # ~-55 dBFS is still far below anything audible across a room.
+    _DITHER_PEAK = 60
+    _RUNUP = 0.25                      # seconds of dither immediately before speech
 
     def __init__(self):
         self.proc = None
@@ -155,21 +158,21 @@ class _Speaker:
         return np.random.randint(-cls._DITHER_PEAK, cls._DITHER_PEAK + 1,
                                  n, dtype=np.int16).tobytes()
 
-    @staticmethod
-    def _trim_lead(pcm: bytes) -> bytes:
-        """Drop the silence the synthesiser puts in front.
+    @classmethod
+    def _lead_in(cls, pcm: bytes) -> bytes:
+        """Replace the synthesiser's leading silence with dither.
 
-        The stream is already being held open with dither, so that silence adds
-        nothing but delay — and it is exactly the stretch during which the first
-        word used to disappear.
+        Trimming that silence outright was a mistake — it left speech starting
+        40 ms into the write, with nothing for the amplifier to ramp on, and made
+        the clipped first word worse rather than better. What it needed was not
+        less lead-in but a lead-in the DSP can hear: a quarter second of dither,
+        inaudible in the room, carrying straight into the first syllable.
         """
         import numpy as np
         a = np.frombuffer(pcm, dtype=np.int16)
         loud = np.flatnonzero(np.abs(a) > 200)
-        if loud.size == 0:
-            return pcm
-        start = max(0, loud[0] - SPEAK_RATE // 50)     # keep 20 ms of run-up
-        return a[start:].tobytes()
+        start = loud[0] if loud.size else 0
+        return cls._filler(cls._RUNUP) + a[start:].tobytes()
 
     # --- speaking -------------------------------------------------------
     @staticmethod
@@ -199,7 +202,7 @@ class _Speaker:
             if self._streaming:
                 out, self._pending = bytes(self._pending), bytearray()
             elif len(self._pending) >= PREBUFFER * SPEAK_RATE * 2:
-                out = self._trim_lead(bytes(self._pending))
+                out = self._lead_in(bytes(self._pending))
                 self._pending = bytearray()
                 self._streaming = True
             else:
