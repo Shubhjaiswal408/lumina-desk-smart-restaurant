@@ -1,0 +1,182 @@
+<meta charset="utf-8">
+<title>Lumina Desk — demo script</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  * { box-sizing: border-box; }
+  body {
+    font: 11.5pt/1.55 "Georgia", "Times New Roman", serif;
+    color: #1a1a1a; margin: 0;
+  }
+  h1 {
+    font-size: 26pt; margin: 0 0 2pt; letter-spacing: -.4pt;
+    font-family: Georgia, serif;
+  }
+  .sub { color: #b3261e; font-size: 11pt; letter-spacing: 2pt;
+         text-transform: uppercase; margin-bottom: 22pt; font-family: Helvetica, Arial, sans-serif; }
+  h2 {
+    font-size: 15pt; margin: 26pt 0 8pt; padding-bottom: 4pt;
+    border-bottom: 2px solid #b3261e; page-break-after: avoid;
+  }
+  h3 { font-size: 12pt; margin: 16pt 0 4pt; page-break-after: avoid; }
+  p { margin: 6pt 0; }
+  .say {
+    background: #fdf3f2; border-left: 3px solid #b3261e;
+    padding: 7pt 11pt; margin: 7pt 0; font-style: italic;
+  }
+  .say b { font-style: normal; color: #b3261e; }
+  .shot {
+    font-family: Helvetica, Arial, sans-serif; font-size: 9.5pt;
+    color: #555; margin: 3pt 0 3pt 2pt;
+  }
+  .shot b { color: #1a1a1a; }
+  table { width: 100%; border-collapse: collapse; margin: 8pt 0; font-size: 10pt; }
+  th, td { text-align: left; padding: 5pt 8pt; border-bottom: 1px solid #ddd; vertical-align: top; }
+  th { font-family: Helvetica, Arial, sans-serif; font-size: 9pt;
+       text-transform: uppercase; letter-spacing: .6pt; color: #666; }
+  .note {
+    background: #f6f6f4; padding: 9pt 12pt; margin: 10pt 0;
+    font-size: 10pt; border-radius: 3pt;
+  }
+  .note b { color: #b3261e; }
+  code { font: 9.5pt "DejaVu Sans Mono", monospace; background: #f0f0ee; padding: 1pt 3pt; }
+  ol, ul { margin: 6pt 0; padding-left: 18pt; }
+  li { margin: 3pt 0; }
+  .part { page-break-before: always; }
+</style>
+
+<h1>Lumina Desk</h1>
+<div class="sub">Demo script</div>
+
+<p>Two halves. First what a customer sees at the table, then what the restaurant
+sees behind it. Shoot them in that order — the second only makes sense once the
+first has landed.</p>
+
+<div class="note">
+<b>Before you roll.</b> Run <code>./venv/bin/python tools_doctor.py</code> — everything
+should say ok. Open <code>http://techiesms.local:8000</code> and log in now, so no PIN
+screen appears on camera. Leave 20–30 seconds between takes; the free API tier
+slows down under rapid retries.
+</div>
+
+<h2>Part 1 · The customer</h2>
+
+<h3>Sitting down</h3>
+<div class="shot"><b>Shot:</b> over your shoulder — table, panel, nothing else</div>
+<p>The screen is already showing the restaurant name and three things you could
+say. No app, no QR code, no menu card.</p>
+
+<h3>Ordering</h3>
+<div class="say"><b>You:</b> Hey Lumina, one large Margherita and two cold coffees.</div>
+<p>It answers out loud, and the panel redraws with both items, the prices, what
+they contain, and the running total.</p>
+
+<div class="note">
+<b>The screen takes about 20 seconds to redraw.</b> That's ePaper, not a bug. Say
+the number out loud once and the audience accepts it for the rest of the video.
+Then cut away or speed it up in the edit — never film the wait.
+</div>
+
+<h3>Asking about the food</h3>
+<div class="say"><b>You:</b> What's in the cheese stuffed garlic bread?</div>
+<p>It reads the ingredients. Worth saying on camera: this comes out of the menu
+database, not the model's memory. It isn't allowed to make it up.</p>
+
+<div class="say"><b>You:</b> Add two of those.</div>
+<p>"Those" works — it knows what you were just talking about.</p>
+
+<h3>Changing your mind</h3>
+<div class="say"><b>You:</b> Actually, remove one.</div>
+<div class="say"><b>You:</b> What's my bill?</div>
+<p>The total is computed in Python from the menu. The model never touches a
+number — that's the line worth repeating.</p>
+
+<h3>Paying</h3>
+<div class="say"><b>You:</b> I want to pay.</div>
+<div class="shot"><b>Shot:</b> the panel with the UPI QR, then your own phone scanning it</div>
+<p>The amount is already filled in. One UPI ID, a different amount every bill,
+no payment gateway. Pay it for real if you can — a live payment landing is worth
+more than any explanation.</p>
+<p>Then the thank-you screen, with a feedback QR that already knows which table
+you were sitting at.</p>
+
+<h3>One more thing worth showing</h3>
+<div class="shot"><b>Action:</b> pull the internet out, on camera</div>
+<div class="say"><b>You:</b> Hey Lumina, one Margherita.</div>
+<p>It still works. Wake word, speech recognition, understanding, the voice and
+the screen all run on the Pi. Be straight that offline recognition is less
+accurate — admitting it costs nothing and makes the rest believable.</p>
+
+<h2 class="part">Part 2 · The kitchen and the back office</h2>
+
+<p>Screen recording from here, not a camera pointed at a monitor. Everything
+lives at one address on the restaurant's WiFi.</p>
+
+<h3>The kitchen board</h3>
+<p>Tickets appear as they're spoken. Wait timers turn amber then red. Allergens
+are flagged in red on every line. One tap moves a dish New → Preparing → Ready →
+Served, and the table's own screen updates with it.</p>
+<div class="shot"><b>Shot:</b> order something at the table, then cut to the ticket appearing</div>
+<p>Guest requests get their own banner — "Table 07 needs 2× water" — and stay up
+until someone marks them delivered.</p>
+
+<h3>Changing the menu, live</h3>
+<p>This is the best single demo in the whole back office. Do it in one shot, no cut:</p>
+<ol>
+  <li>Change a dish's price on the Menu page</li>
+  <li>Immediately ask Lumina what that dish costs</li>
+  <li>The new price comes back</li>
+</ol>
+<p>Same for marking something sold out — it stops being orderable straight away.
+No restart, no redeploy.</p>
+
+<h3>Analytics</h3>
+<p>Revenue today, average ticket, how long an order takes from spoken to served,
+peak hour, busiest tables, and what people actually order.</p>
+
+<h3>Payments</h3>
+<p>Every bill and how it settled. Payments confirm themselves by reading the
+merchant's payment emails; there's a webhook for a real gateway and a Mark paid
+button for when neither applies.</p>
+
+<h3>Terminal</h3>
+<p>Live logs from every service, in the browser. Show yourself debugging a table
+from a phone while standing in the shop — that's the point of it.</p>
+
+<h3>Settings</h3>
+<p>Assistant on, muted or off. Cloud or fully offline. Tax, UPI ID, the voice and
+how fast it speaks, wake-word sensitivity, staff PIN. Everything applies within a
+second.</p>
+<p>Worth demonstrating <b>Muted</b> specifically: the microphone is genuinely
+released — the mic ring goes dark — and the table's screen says so instead of
+inviting someone to talk to something that isn't listening.</p>
+
+<h2>What to say, and what not to</h2>
+
+<table>
+  <tr><th>Say</th><th>Why it lands</th></tr>
+  <tr><td>The model never decides a price.</td><td>It's the whole design in six words.</td></tr>
+  <tr><td>Pull the internet out and it keeps taking orders.</td><td>Nobody expects this.</td></tr>
+  <tr><td>The screen uses no power to hold that bill.</td><td>The moment people rewind.</td></tr>
+  <tr><td>It's running at a real pizza place, with their real menu.</td><td>Turns a demo into a product.</td></tr>
+</table>
+
+<p><b>Don't say it's perfect.</b> It mishears a dish name sometimes, like every
+voice system. If that happens mid-take, correct it out loud and keep rolling —
+that take is better than a clean one, because every voice demo online is
+suspiciously flawless and everyone knows it.</p>
+
+<h2>Rough edges to plan around</h2>
+
+<table>
+  <tr><th>Thing</th><th>What to do</th></tr>
+  <tr><td>ePaper takes ~20 s to redraw</td><td>Cut away or speed-ramp. Mention the number once.</td></tr>
+  <tr><td>The very first word of a reply can clip</td><td>Don't subtitle a greeting or make it a hero moment. Every line is written so losing the first word doesn't lose the meaning.</td></tr>
+  <tr><td>Free API tier rate-limits</td><td>20–30 s between takes.</td></tr>
+  <tr><td>Panel is on USB</td><td>The WiFi firmware works, but this router has client isolation on. Don't claim battery on camera unless you've shot it.</td></tr>
+  <tr><td>Offline is slower</td><td>Say so. That it works at all is the feature.</td></tr>
+</table>
+
+<h2>If you want one clip for social</h2>
+<p>Sit down. Say the order. Cut to the panel showing the bill. No narration,
+vertical, fifteen seconds. The idea reads without a word of explanation, which is
+the only thing that travels.</p>

@@ -132,7 +132,7 @@ built around the ways they actually fail:
 - **`tests/test_offline.py`** — no mic, no network, no services. Every case is a mistake this system actually made.
 - **`tests/test_live.py`** — a whole guest journey against the running system.
 - **`tools_bench.py`** — times each stage of a turn.
-- **[Shooting script](docs/SHOOTING_SCRIPT.md)** — if you want to film it, including the rough edges worth planning around.
+- **[Demo script](docs/SHOOTING_SCRIPT.md)** ([PDF](docs/Lumina-Desk-demo-script.pdf)) — how to show it off, from the customer's side and the kitchen's, including the rough edges worth planning around.
 
 ## The staff side
 
