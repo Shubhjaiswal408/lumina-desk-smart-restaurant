@@ -58,6 +58,10 @@ DEFAULTS = {
     # Neerja's default pace is unhurried for a counter. A nudge shortens every
     # reply without sounding rushed. Edge syntax, e.g. "+0%", "+12%", "-5%".
     "tts_rate": "+20%",
+    # Seconds of near-silent lead-in before each reply. The reSpeaker's DSP eats
+    # the start of every line; this gives it something to eat that isn't speech.
+    # Raise it if the first word still gets clipped, lower it for less delay.
+    "tts_lead_in": 0.6,
 
     # --- voice tuning ---
     "wake_threshold": config.OWW_THRESHOLD,

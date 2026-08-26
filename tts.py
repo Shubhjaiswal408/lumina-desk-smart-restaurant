@@ -99,7 +99,12 @@ class _Speaker:
     # -80 dBFS was a guess and too quiet to be sure of holding a gate open.
     # ~-55 dBFS is still far below anything audible across a room.
     _DITHER_PEAK = 60
-    _RUNUP = 0.35                      # seconds of ramp before speech
+    # How long to lead in before the first syllable. The reSpeaker swallows the
+    # opening of every line and no amount of signal shaping stopped it, so this
+    # is simply a head start — long enough that what gets eaten is lead-in
+    # rather than speech. It costs exactly this much latency on every reply,
+    # which is why it's a setting: turn it down if your speaker doesn't need it.
+    _RUNUP_DEFAULT = 0.6
 
     def __init__(self):
         self.proc = None
@@ -188,7 +193,12 @@ class _Speaker:
         # Give it a rising ramp to track instead, so the gain has finished moving
         # by the time speech starts. Ends around -35 dBFS — still not something
         # you would notice in a room, but plenty for an AGC to lock onto.
-        n = int(SPEAK_RATE * cls._RUNUP)
+        try:
+            import settings
+            runup = float(settings.get("tts_lead_in", cls._RUNUP_DEFAULT))
+        except Exception:
+            runup = cls._RUNUP_DEFAULT
+        n = int(SPEAK_RATE * max(0.0, runup))
         # randn peaks at roughly 3 sigma, so keep sigma low enough that the
         # loudest part stays inaudible: ~-45 dBFS, not -25.
         ramp = np.random.randn(n) * np.linspace(cls._DITHER_PEAK / 3, 60, n)

@@ -211,6 +211,11 @@ export default function SettingsPage() {
               <option value="local">Local (Piper)</option>
             </select>
           </Row>
+          <Row label="Lead-in (s)"
+            hint="Silence before each reply. The speaker's DSP swallows the start of every line — this gives it something to eat that isn't a word. Raise it if the first word still gets cut; lower it for less delay.">
+            <Input type="number" step="0.1" defaultValue={s.tts_lead_in} className="w-28"
+              onBlur={(e) => { const v = Number(e.target.value); if (v !== s.tts_lead_in) save({ tts_lead_in: v }) }} />
+          </Row>
           <Row label="Speaking pace" hint='Nudge the natural voice faster or slower, e.g. "+12%"'>
             <Input defaultValue={s.tts_rate} className="w-28"
               onBlur={(e) => e.target.value !== s.tts_rate && save({ tts_rate: e.target.value })} />
