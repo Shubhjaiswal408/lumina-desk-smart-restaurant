@@ -28,7 +28,7 @@ OLLAMA_URL = "http://localhost:11434/api/chat"
 LOCAL_MODEL = "hf.co/LiquidAI/LFM2-700M-GGUF"
 
 INTENTS = [
-    "order", "remove", "replace", "clear_cart", "check_bill", "split_bill",
+    "order", "affirm", "remove", "replace", "clear_cart", "check_bill", "split_bill",
     "ask_price", "ask_ingredient", "ask_allergen", "recommend", "show_menu",
     "show_category", "request_item", "call_staff", "pay", "unavailable",
     "smalltalk", "end",

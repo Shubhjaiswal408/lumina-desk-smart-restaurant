@@ -12,6 +12,10 @@ class Session:
         self.staff_called = False
         # Last dish discussed/suggested, so "add it" / "what's in it" resolve.
         self.last_dish = None
+        # The dish Lumina just offered out loud ("Want the Margherita?"). A bare
+        # "yes" means that dish and nothing else — without it, answering your own
+        # question was treated as a fresh, contextless utterance.
+        self.pending_offer = None
         # Rolling chat history for the LLM: [{"role","content"}, ...]
         self.history = []
 

@@ -162,6 +162,31 @@ dialog.handle(intents.parse_intent("okay give me a medium one"), _s4)
 check([(_s4.line_label(l), l["qty"]) for l in _s4.cart] == [("Medium Veg. Extravaganza", 1)],
       "a size given without a dish is honoured")
 
+print("\nAnswering Lumina's own question")
+# Lumina asked "Want the Margherita?", the guest said "Yes", and it read out the
+# menu. It had no notion of what an answer was.
+_s = Session()
+_offer = dialog.handle(intents.parse_intent("can you recommend something"), _s)
+check("Want the" in _offer, "a recommendation ends in an offer")
+_yes = dialog.handle(intents.parse_intent("Yes."), _s)
+check([(l["dish"]["name"], l["qty"]) for l in _s.cart] == [("Margherita", 1)],
+      "'yes' orders the dish that was offered")
+for word in ("sure", "haan", "ok please", "yeah"):
+    _s2 = Session()
+    dialog.handle(intents.parse_intent("can you recommend something"), _s2)
+    dialog.handle(intents.parse_intent(word), _s2)
+    check(len(_s2.cart) == 1, f"'{word}' counts as yes")
+# ...but only when something was actually offered.
+check("what would you like" in dialog.handle(
+    intents.parse_intent("yes"), Session()).lower(),
+    "'yes' out of nowhere orders nothing")
+# An offer expires the moment anything else is said.
+_s3 = Session()
+dialog.handle(intents.parse_intent("can you recommend something"), _s3)
+dialog.handle(intents.parse_intent("what is my bill"), _s3)
+dialog.handle(intents.parse_intent("yes"), _s3)
+check(not _s3.cart, "a stale offer can't be accepted a turn later")
+
 print("\nSizes and labels")
 order("i want a paneer momo in gravy and one peri peri fries large",
       [("Paneer Momo (Gravy)", 1), ("Large Peri-Peri Fries", 1)])

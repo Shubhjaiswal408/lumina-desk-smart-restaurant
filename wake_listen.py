@@ -102,7 +102,8 @@ def _handle_button(key: str, tbl, client):
 # dish list. dialog.py computes all of those from the menu, so the model's
 # wording is discarded for them no matter which brain produced it.
 FACT_INTENTS = {"check_bill", "split_bill", "pay", "ask_price", "ask_ingredient",
-                "ask_allergen", "show_menu", "show_category", "recommend"}
+                "ask_allergen", "show_menu", "show_category", "recommend",
+                "affirm"}
 
 # Fact intents that are meaningless without knowing which dish is meant. If the
 # rules can't name one, the model gets a turn — it can resolve "what's in it?"

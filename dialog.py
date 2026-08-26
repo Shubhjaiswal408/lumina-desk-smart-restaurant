@@ -57,6 +57,16 @@ def _diet(dish: dict) -> str:
 def handle(result: dict, session: Session) -> str:
     intent = _ALIASES.get(result["intent"], result["intent"])
     llm_reply = result.get("reply", "")
+    # An offer only stands until the next thing is said. Whatever this turn is,
+    # it answers the last question — anything that isn't a yes cancels it.
+    offered, session.pending_offer = session.pending_offer, None
+
+    if intent == "affirm":
+        if not offered:
+            return llm_reply or "Sure — what would you like?"
+        intent = "order"
+        result = {**result, "intent": "order", "dish": offered, "items": [],
+                  "quantity": result.get("quantity", 1)}
 
     if intent == "order":
         items = result.get("items") or []
@@ -144,11 +154,13 @@ def handle(result: dict, session: Session) -> str:
         session.last_dish = d          # so "yes, one of those" works next turn
         size = result.get("size")
         if size:
+            session.pending_offer = d
             return f"{menu.label_for(d, size)} is {menu.price_for(d, size)} rupees. Want one?"
         sizes = menu.size_names(d)
         if sizes:
             bits = ", ".join(f"{s} {menu.price_for(d, s)}" for s in sizes)
             return f"{d['name']} — {bits} rupees. Which one?"
+        session.pending_offer = d
         return f"{d['name']} is {menu.price_for(d)} rupees. Want one?"
 
     if intent == "request_item":
@@ -228,6 +240,7 @@ def handle(result: dict, session: Session) -> str:
             return llm_reply
         picks = [p for p in menu.CHEF_SPECIALS if menu.find_dish(p)][:3]
         session.last_dish = menu.find_dish(picks[0]) if picks else None
+        session.pending_offer = session.last_dish
         return (f"{picks[0]} is our most-ordered — {' and '.join(picks[1:])} go fast too. "
                 f"Want the {picks[0]}?"
                 if picks else "What are you in the mood for?")

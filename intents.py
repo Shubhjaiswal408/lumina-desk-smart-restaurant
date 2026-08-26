@@ -96,6 +96,18 @@ def _order_items(t: str) -> list:
 _QUESTION = re.compile(r"^(is|are|was|does|do|can|could|would|has|have|which|what|any)\b"
                        r"|\?\s*$")
 
+_AFFIRM = re.compile(
+    r"^(yes|yep|yeah|yup|ya|sure|ok|okay|okey|alright|please|"
+    r"go ahead|do it|sounds good|why not|haan|ha|theek hai|thik hai|"
+    r"yes please|ok please|sure thing|of course|absolutely|perfect)"
+    r"[\s,.!]*(please|thanks|thank you)?[\s,.!]*$", re.I)
+
+
+def stripped_affirm(t: str) -> bool:
+    """Is this just agreement, with nothing else in it?"""
+    return bool(_AFFIRM.match((t or "").strip()))
+
+
 _END_PHRASES = {
     "no", "nope", "no thanks", "no thank you", "nothing", "nothing else",
     "that's all", "thats all", "that's it", "thats it", "that will be all",
@@ -113,6 +125,12 @@ def parse_intent(text: str) -> dict:
     # Whole-word test. Needed for short tokens that hide inside dish names —
     # "nut" is in "Hazelnut Cold Coffee", "veg" is in half this menu.
     word = lambda *kw: any(re.search(rf"\b{k}\b", t) for k in kw)
+
+    # A bare "yes". Lumina asks questions — "Want the Margherita?" — and until
+    # now had no idea what an answer was, so it treated one as a fresh sentence
+    # and read out the menu. dialog.py knows what was offered.
+    if stripped_affirm(t):
+        return {"intent": "affirm", "text": text, "quantity": _quantity(t)}
 
     # End of conversation — short, explicit closings only.
     stripped = t.strip(" .!,")
