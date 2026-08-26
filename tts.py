@@ -116,10 +116,21 @@ class _Speaker:
     def _ensure(self):
         if self.proc is None or self.proc.poll() is not None:
             self.proc = subprocess.Popen(
-                ["aplay", "-q", "-t", "raw", "-f", "S16_LE",
+                ["aplay", "-t", "raw", "-f", "S16_LE",
                  "-r", str(SPEAK_RATE), "-c", "1", "-D", config.PLAYBACK_DEVICE],
-                stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                stdin=subprocess.PIPE, stderr=subprocess.PIPE)
+            threading.Thread(target=self._log_player,
+                             args=(self.proc,), daemon=True).start()
             self.ends_at = time.monotonic()
+
+    @staticmethod
+    def _log_player(proc):
+        """Surface aplay's complaints. Discarding them hid the player dying."""
+        for line in iter(proc.stderr.readline, b""):
+            line = line.decode(errors="replace").strip()
+            if line:
+                print(f"[aplay] {line}", flush=True)
+        print(f"[aplay] player exited rc={proc.poll()}", flush=True)
 
     def _raw(self, pcm: bytes, speech: bool = False):
         """Write to the device. Serialised: a keep-alive tick must never land in
