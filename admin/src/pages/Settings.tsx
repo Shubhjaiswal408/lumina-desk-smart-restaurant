@@ -5,7 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { getSettings, saveSettings, testSettings, type Settings as S } from "@/lib/api"
+import { getSettings, saveSettings, testSettings, getPanel, redrawPanel, flashPanel,
+  type Settings as S, type PanelState } from "@/lib/api"
 
 const ASSISTANT_STATES = [
   { id: "active", icon: Mic, label: "Active",
@@ -43,6 +44,16 @@ export default function SettingsPage() {
   const [pin, setPin] = useState("")
   const [busy, setBusy] = useState(false)
   const [health, setHealth] = useState<{ cloud_ok: boolean; ollama_up: boolean; detail: string } | null>(null)
+  const [panel, setPanel] = useState<PanelState | null>(null)
+
+  // Poll only while a flash is in flight — otherwise once is enough.
+  useEffect(() => {
+    getPanel().then(setPanel)
+    const t = setInterval(() => {
+      getPanel().then((p) => { setPanel(p); if (!p.running) clearInterval(t) })
+    }, 1500)
+    return () => clearInterval(t)
+  }, [])
 
   const load = () => getSettings().then(setS)
   useEffect(() => { load() }, [])
@@ -191,6 +202,48 @@ export default function SettingsPage() {
               </Button>
             </div>
           </Row>
+        </CardContent>
+      </Card>
+
+      {/* Table panel */}
+      <Card className="mb-4">
+        <CardHeader><CardTitle>Table panel</CardTitle></CardHeader>
+        <CardContent>
+          <Row label="Connected"
+            hint={panel?.port ? `on ${panel.port}` : "plug the panel in over USB to flash it"}>
+            <span className="text-sm">{panel?.board ?? "none detected"}</span>
+          </Row>
+          <Row label="Redraw the screen"
+            hint="Send the current order to the panel again. Try this first — a stale screen almost never needs a reflash.">
+            <Button variant="secondary" onClick={async () => {
+              await redrawPanel(); toast.success("Sent — the panel takes ~20s to draw")
+            }}>Redraw</Button>
+          </Row>
+          <Row label="Re-upload the firmware"
+            hint="Puts the code back on the panel. Takes about a minute, and the screen is dead until it finishes — don't do it mid-service.">
+            <div className="flex flex-wrap items-center gap-3">
+              <Button variant="destructive"
+                disabled={!panel?.port || !panel?.toolchain || panel?.running}
+                onClick={async () => {
+                  const r = await flashPanel()
+                  if (r.ok) { toast.success("Flashing…"); getPanel().then(setPanel) }
+                  else toast.error(r.error || "couldn't start")
+                }}>
+                {panel?.running ? `Flashing… ${panel.elapsed}s` : "Flash panel"}
+              </Button>
+              {panel && !panel.running && panel.ok === true &&
+                <Badge variant="outline" className="text-emerald-500">
+                  <CheckCircle2 className="size-3 mr-1" />Done</Badge>}
+              {panel && !panel.running && panel.ok === false &&
+                <Badge variant="outline" className="text-red-500">
+                  <XCircle className="size-3 mr-1" />Failed</Badge>}
+            </div>
+          </Row>
+          {panel && panel.log.length > 0 && (
+            <pre className="mt-3 max-h-48 overflow-auto rounded bg-muted p-3 text-[11px] leading-relaxed">
+              {panel.log.join("\n")}
+            </pre>
+          )}
         </CardContent>
       </Card>
 

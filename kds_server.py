@@ -22,6 +22,7 @@ import config
 import kds_data
 import mqtt_bus
 import menu
+import panel_flash
 import payments
 import settings
 
@@ -428,6 +429,33 @@ async def api_pay_webhook(body: dict):
         _mqtt.publish(f"lumina/table/{row['tbl']}/payment", "paid", retain=True)
     _broadcast()
     return {"ok": True, "matched": bool(row), "settled": ok}
+
+
+# ---------------- The table panel ----------------
+
+@app.get("/api/panel")
+async def api_panel():
+    return panel_flash.status()
+
+
+@app.post("/api/panel/redraw")
+async def api_panel_redraw():
+    """Ask the display service to send the current screen again.
+
+    This is what a panel showing something stale actually needs, and it costs
+    one refresh rather than a two-minute reflash — so it's the first thing to
+    reach for.
+    """
+    if _mqtt is None:
+        return {"ok": False, "error": "no MQTT connection"}
+    _mqtt.publish(f"lumina/table/{config.TABLE_ID}/panel", "online", retain=True)
+    return {"ok": True}
+
+
+@app.post("/api/panel/flash")
+async def api_panel_flash():
+    """Put the firmware back on the panel. Takes about a minute."""
+    return panel_flash.start()
 
 
 @app.get("/api/payments")

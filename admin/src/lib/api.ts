@@ -83,6 +83,14 @@ export const testSettings = (groq_api_key?: string) =>
   post("/api/settings/test", { groq_api_key }) as Promise<
     { cloud_ok: boolean; ollama_up: boolean; detail: string }>
 
+export type PanelState = {
+  port: string | null; board: string | null; toolchain: boolean
+  running: boolean; ok: boolean | null; log: string[]; elapsed: number
+}
+export const getPanel = () => j("/api/panel") as Promise<PanelState>
+export const redrawPanel = () => post("/api/panel/redraw")
+export const flashPanel = () => post("/api/panel/flash")
+
 export const getPay = (table: string, amount?: number) =>
   j(`/api/pay/${table}${amount != null ? `?amount=${amount}` : ""}`) as Promise<PayInfo>
 export const getPayments = () => j("/api/payments") as Promise<Payment[]>

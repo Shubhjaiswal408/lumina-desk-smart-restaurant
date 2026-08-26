@@ -124,6 +124,7 @@ built around the ways they actually fail:
 - **Menu editing** — change a price or mark something sold out and it's live for the voice immediately.
 - **Analytics** — revenue, average ticket, order-to-served time, peak hour, busiest tables, popular dishes.
 - **Terminal** — every service's logs in the browser, no SSH.
+- **Table panel controls** — redraw a stale screen with one click, or re-upload the panel's firmware from the browser when it genuinely needs it. No laptop, no remembering an arduino-cli invocation while the restaurant is open.
 - **Settings** — assistant on/muted/off, brain mode, API key, tax, UPI, voice and pace, wake sensitivity, end-of-speech pause, staff PIN. All live.
 
 ### For whoever maintains it
