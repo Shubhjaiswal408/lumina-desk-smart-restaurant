@@ -113,6 +113,7 @@ class _Speaker:
         self._write_lock = threading.Lock()  # one writer at a time
         self._pending = bytearray()    # this utterance, still being assembled
         self._streaming = False        # has this utterance started playing?
+        self._led_in = False           # has its lead-in been sent?
         self._spoken = 0               # bytes of THIS utterance handed to aplay
         self._started = 0.0            # when its first byte went out
         threading.Thread(target=self._keep_awake, daemon=True).start()
@@ -232,18 +233,32 @@ class _Speaker:
             if self._streaming:
                 out, self._pending = bytes(self._pending), bytearray()
             elif len(self._pending) >= PREBUFFER * SPEAK_RATE * 2:
-                out = self._lead_in(bytes(self._pending))
+                out = self._open_utterance(bytes(self._pending))
                 self._pending = bytearray()
                 self._streaming = True
             else:
                 return
         self._raw(out, speech=True)
 
+    def _open_utterance(self, pcm: bytes) -> bytes:
+        """First audio of a line: put the lead-in in front of it, once."""
+        if self._led_in:
+            return pcm
+        self._led_in = True
+        return self._lead_in(pcm)
+
     def flush(self) -> bool:
         """Play whatever is left and end the utterance."""
         with self._lock:
             pcm, self._pending = bytes(self._pending), bytearray()
             spoke, self._streaming = self._streaming, False
+            # A reply shorter than the prebuffer never reached the branch that
+            # adds the lead-in, so short lines — "Yes, go ahead." — went out with
+            # no protection at all and lost their first word every time. Whichever
+            # path writes first has to open the utterance.
+            if pcm:
+                pcm = self._open_utterance(pcm)
+            self._led_in = False
         if pcm:
             self._raw(pcm, speech=True)
         return bool(pcm) or spoke
