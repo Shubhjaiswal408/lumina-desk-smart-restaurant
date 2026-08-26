@@ -99,7 +99,7 @@ class _Speaker:
     # -80 dBFS was a guess and too quiet to be sure of holding a gate open.
     # ~-55 dBFS is still far below anything audible across a room.
     _DITHER_PEAK = 60
-    _RUNUP = 0.25                      # seconds of dither immediately before speech
+    _RUNUP = 0.35                      # seconds of ramp before speech
 
     def __init__(self):
         self.proc = None
@@ -172,7 +172,16 @@ class _Speaker:
         a = np.frombuffer(pcm, dtype=np.int16)
         loud = np.flatnonzero(np.abs(a) > 200)
         start = loud[0] if loud.size else 0
-        return cls._filler(cls._RUNUP) + a[start:].tobytes()
+        # A flat lead-in wasn't enough: the XVF3800 is a conferencing DSP and its
+        # output gain is still settling when a short soft word like "Hi" arrives.
+        # Give it a rising ramp to track instead, so the gain has finished moving
+        # by the time speech starts. Ends around -35 dBFS — still not something
+        # you would notice in a room, but plenty for an AGC to lock onto.
+        n = int(SPEAK_RATE * cls._RUNUP)
+        # randn peaks at roughly 3 sigma, so keep sigma low enough that the
+        # loudest part stays inaudible: ~-45 dBFS, not -25.
+        ramp = np.random.randn(n) * np.linspace(cls._DITHER_PEAK / 3, 60, n)
+        return ramp.astype(np.int16).tobytes() + a[start:].tobytes()
 
     # --- speaking -------------------------------------------------------
     @staticmethod
