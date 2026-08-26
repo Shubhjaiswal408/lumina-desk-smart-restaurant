@@ -8,25 +8,26 @@ Kept separate from the audio loop so they're easy to tune or translate.
 """
 import random
 
-# Said the instant the wake word fires. Short, so it feels snappy.
+# Every line here starts with a word that can be lost without losing the
+# meaning. The reSpeaker swallows roughly the first quarter second whatever we
+# feed it — dither, ramps and a held-open device all failed to stop it — so the
+# reply is written to survive it instead. Drop "Yes" from "Yes, what can I get
+# you?" and a guest still hears a complete question.
+#
+# The rule for anything added here: read it without its first word. If it still
+# works, it's fine.
+
+# Said the instant the wake word fires, mid-meal.
 GREETINGS = [
-    "Yeah? What can I get you?",
-    "I'm listening.",
-    "Go ahead!",
-    "Sure — what would you like?",
-    "Yep, tell me.",
+    "Yes, what can I get you?",
+    "Sure, go ahead.",
+    "Yes, tell me.",
+    "Right, what would you like?",
 ]
 
-# First wake of a session. This one has to be SHORT.
-#
-# It used to be two sentences explaining what Lumina could do — 142 characters,
-# which the neural voice takes about nine seconds to say. A guest says "Hey
-# Lumina", hears a speech start, waits, decides it didn't hear them, and says it
-# again — and that second "Hey Lumina" lands as their order. Watched it happen.
-#
-# Everything the old line explained is already printed on the screen in front of
-# them. Say hello and get out of the way.
-WELCOME = "Hi! What can I get you?"
+# First wake of a session. Short, because the guest is waiting to talk — and
+# front-loaded with a throwaway word for the same reason as the rest.
+WELCOME = "Yes, what can I get you?"
 
 
 def greeting(session=None) -> str:
@@ -37,5 +38,5 @@ def greeting(session=None) -> str:
     for something specific, so get out of the way and let them say it.
     """
     if session is not None and getattr(session, "cart", None):
-        return random.choice(["Yes?", "Go ahead.", "Yep?"])
+        return random.choice(["Yes, go ahead.", "Sure, tell me.", "Yes, I'm listening."])
     return random.choice(GREETINGS)

@@ -63,7 +63,7 @@ def handle(result: dict, session: Session) -> str:
 
     if intent == "affirm":
         if not offered:
-            return llm_reply or "Sure — what would you like?"
+            return llm_reply or "Sure, what would you like?"
         intent = "order"
         result = {**result, "intent": "order", "dish": offered, "items": [],
                   "quantity": result.get("quantity", 1)}
@@ -74,7 +74,7 @@ def handle(result: dict, session: Session) -> str:
         if not items:
             dish = result.get("dish") or session.last_dish
             if not dish:
-                return "Sure — what would you like?"
+                return "Sure, what would you like?"
             items = [{"dish": dish, "quantity": result.get("quantity", 1)}]
 
         added, total, unavailable, assumed = [], 0, [], []
@@ -120,7 +120,7 @@ def handle(result: dict, session: Session) -> str:
     if intent == "remove":
         dish = result.get("remove_dish") or result.get("dish") or session.last_dish
         if not dish:
-            return "Which one should I take off?"
+            return "Sorry, which one should I take off?"
         # "remove one naan" drops just one; "remove the naan" drops the whole line.
         qty = result.get("quantity", 0) if result.get("qty_explicit") else 0
         if qty and qty > 0:
@@ -145,12 +145,12 @@ def handle(result: dict, session: Session) -> str:
             if old:
                 msg = f"Swapped it for {label}, {price} rupees."
             return msg
-        return "No problem — what instead?"
+        return "No problem, what instead?"
 
     if intent == "ask_price":
         d = result.get("dish") or session.last_dish
         if not d:
-            return "Which dish did you mean?"
+            return "Sorry, which dish did you mean?"
         session.last_dish = d          # so "yes, one of those" works next turn
         size = result.get("size")
         if size:
@@ -191,7 +191,7 @@ def handle(result: dict, session: Session) -> str:
     if intent == "ask_ingredient":
         dish = result.get("dish") or session.last_dish
         if not dish:
-            return "Which one do you mean?"
+            return "Sorry, which one do you mean?"
         session.last_dish = dish
         ings = dish.get("ingredients") or []
         if not ings:   # e.g. a dish added from the console with no recipe yet
@@ -223,7 +223,7 @@ def handle(result: dict, session: Session) -> str:
             return (f"Without {avoid} we've got {names}{more}. "
                     f"For a serious allergy I'll have the kitchen confirm before you order.")
         if not dish:
-            return "Which one should I check?"
+            return "Sorry, which one should I check?"
         session.last_dish = dish
         if dish["allergens"]:
             return (
@@ -247,9 +247,9 @@ def handle(result: dict, session: Session) -> str:
 
     if intent == "clear_cart":
         if session.is_empty():
-            return "It's already empty. What can I get you?"
+            return "That's already empty, what can I get you?"
         session.clear()
-        return "Cleared. What would you like?"
+        return "Cleared, what would you like?"
 
     if intent == "show_category":
         cat = result.get("category")
@@ -288,7 +288,7 @@ def handle(result: dict, session: Session) -> str:
 
     if intent == "call_staff":
         session.staff_called = True
-        return llm_reply or "Done — someone's on their way."
+        return llm_reply or "Done, someone's on their way."
 
     if intent == "pay":
         if session.is_empty():
@@ -304,8 +304,8 @@ def handle(result: dict, session: Session) -> str:
     if intent == "end":
         if not session.is_empty():
             return f"That's {session.total():.0f} rupees. Enjoy — just say Hey Lumina if you need anything."
-        return "Cool — say Hey Lumina whenever you need me."
+        return "Cool, say Hey Lumina whenever you need me."
 
     # smalltalk / unknown. Listing everything Lumina can do takes seven seconds
     # and doesn't help someone who was probably just misheard — ask them again.
-    return llm_reply or "Sorry — say that again?"
+    return llm_reply or "Sorry, could you say that again?"
