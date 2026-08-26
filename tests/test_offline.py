@@ -187,6 +187,15 @@ dialog.handle(intents.parse_intent("what is my bill"), _s3)
 dialog.handle(intents.parse_intent("yes"), _s3)
 check(not _s3.cart, "a stale offer can't be accepted a turn later")
 
+print("\nKnowing when to stay quiet")
+# Whisper answers silence with stock filler, and Lumina used to reply to it —
+# most of what made it feel like a machine talking to itself.
+import stt as _stt                                                # noqa: E402
+for filler in ("Okay. Okay.", "Exactly.", "Thank you.", "Bye.", "you", ""):
+    check(_stt._is_hallucination(filler), f'"{filler}" is heard as nothing')
+for real in ("one large margherita", "Yes.", "Okay, one margherita", "what is my bill"):
+    check(not _stt._is_hallucination(real), f'"{real}" is heard as speech')
+
 print("\nSizes and labels")
 order("i want a paneer momo in gravy and one peri peri fries large",
       [("Paneer Momo (Gravy)", 1), ("Large Peri-Peri Fries", 1)])

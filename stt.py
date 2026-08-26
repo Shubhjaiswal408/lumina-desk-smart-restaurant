@@ -127,7 +127,12 @@ def record_utterance(capture) -> np.ndarray | None:
     audio = np.concatenate(voiced).astype(np.int16)
     # Reject clips that aren't clearly speech (too quiet or too short) so we
     # never send noise to Whisper (which would hallucinate random words).
-    if len(audio) < int(0.4 * config.SAMPLE_RATE) or _rms(audio) < config.VAD_MIN_SPEECH_RMS:
+    # Reject clips that aren't clearly speech. The floor has to move with the
+    # room: a fixed 500 was below the ~1100 RMS of this one, so ordinary noise
+    # sailed through to Whisper, which duly hallucinated "Okay." and "Exactly."
+    # — and Lumina answered them as if a guest had spoken.
+    floor = max(config.VAD_MIN_SPEECH_RMS, noise_floor * 1.6)
+    if len(audio) < int(0.4 * config.SAMPLE_RATE) or _rms(audio) < floor:
         return None
     return audio
 
@@ -166,6 +171,29 @@ def _vosk_transcribe(pcm: np.ndarray, vosk_model) -> str:
     rec = KaldiRecognizer(vosk_model, config.SAMPLE_RATE)
     rec.AcceptWaveform(pcm.tobytes())
     return json.loads(rec.FinalResult()).get("text", "").strip()
+
+
+# Given silence or noise, Whisper doesn't return nothing — it returns one of a
+# small set of stock phrases. None of them is ever a real thing to say to a
+# waiter, and answering them is what makes Lumina feel like it's talking to
+# itself.
+_HALLUCINATIONS = {
+    "okay", "ok", "okay.", "thank you", "thanks", "thank you.", "bye", "bye.",
+    "exactly", "exactly.", "you", "yeah", "hmm", "mm", "uh", "um", "so",
+    "thank you for watching", "thanks for watching", "please subscribe",
+    "subscribe", "the end", ".", "...", "silence", "[silence]", "music",
+    "[music]", "applause", "[applause]", "bye bye", "see you", "i'm sorry",
+}
+
+
+def _is_hallucination(text: str) -> bool:
+    """Whisper's stock output for 'nothing was said'."""
+    t = (text or "").strip().lower().rstrip(".!?,")
+    if not t:
+        return True
+    # It often repeats one of them: "Okay. Okay."
+    parts = {p.strip().rstrip(".!?,") for p in t.split(".") if p.strip()}
+    return bool(parts) and parts <= _HALLUCINATIONS
 
 
 def transcribe(pcm: np.ndarray, vosk_model=None) -> tuple[str, str, str]:

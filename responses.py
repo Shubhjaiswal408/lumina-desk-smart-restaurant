@@ -29,5 +29,13 @@ GREETINGS = [
 WELCOME = "Hi! What can I get you?"
 
 
-def greeting() -> str:
+def greeting(session=None) -> str:
+    """What to say on a re-wake, mid-meal.
+
+    Picking at random from a list is what a machine does. Someone who has
+    already ordered doesn't need "What can I get you?" again — they came back
+    for something specific, so get out of the way and let them say it.
+    """
+    if session is not None and getattr(session, "cart", None):
+        return random.choice(["Yes?", "Go ahead.", "Yep?"])
     return random.choice(GREETINGS)

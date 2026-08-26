@@ -155,7 +155,7 @@ def _is_wake_echo(text: str) -> bool:
 def converse(capture, model, session, first_time: bool) -> None:
     """Hold a multi-turn conversation until the guest goes quiet or says they're
     done. No wake word needed between turns."""
-    speak(responses.WELCOME if first_time else responses.greeting())
+    speak(responses.WELCOME if first_time else responses.greeting(session))
 
     misses = 0
     last_reply = None
@@ -169,11 +169,20 @@ def converse(capture, model, session, first_time: bool) -> None:
             return
 
         transcript, engine, wlang = stt.transcribe(pcm, vosk_model=model)
-        if not transcript:
+
+        # Whisper answers silence with stock filler — "Okay.", "Exactly.",
+        # "Thank you." — and Lumina used to reply to it, which is most of what
+        # made it feel like a machine talking to itself. Say nothing and keep
+        # listening; a guest who really is waiting will speak.
+        #
+        # The exception is a live offer: if we just asked "Want the Margherita?"
+        # then "Okay" is an answer, not noise.
+        if stt._is_hallucination(transcript) and not session.pending_offer:
+            if transcript:
+                print(f'  (ignored filler: "{transcript}")', flush=True)
             misses += 1
             if misses >= 2:
-                return
-            speak("Sorry, I didn't catch that — could you say it again?")
+                return          # nobody's there; go quiet rather than nag
             continue
         misses = 0
 

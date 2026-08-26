@@ -138,8 +138,8 @@ class _Speaker:
             try:
                 self.proc.stdin.write(pcm)
                 self.proc.stdin.flush()
-            except (BrokenPipeError, ValueError):
-                self.proc = None
+            except (BrokenPipeError, ValueError, OSError):
+                self.proc = None      # died (or we're shutting down); reopen later
 
     def _keep_awake(self):
         """Trickle silence while idle so the amplifier never powers down."""
