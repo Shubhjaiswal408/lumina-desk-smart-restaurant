@@ -148,14 +148,19 @@ def parse_intent(text: str) -> dict:
         return {"intent": "clear_cart", "text": text}
 
     # Remove a dish (kept before ordering so "remove the naan" isn't an order)
-    if has("remove", "take off", "take out", "cancel the", "don't want", "dont want",
-           "no longer want"):
+    if (has("remove", "take off", "take out", "cancel the", "don't want",
+            "dont want", "no longer want")
+            # "take that off", "take the momo off" — the words get separated.
+            or re.search(r"\btake\b.{0,24}\boff\b", t)):
         d = menu.find_dish(t)
-        if d:
+        qty_explicit = bool(re.search(
+            r"\b(\d+|one|two|three|four|five|a|an|single)\b", t))
+        # "actually remove one" names no dish, and used to fall through to the
+        # cloud and then a 20-second local model before giving up. dialog.py can
+        # resolve it from what was just ordered — that is what "one" means.
+        if d or has("it", "that", "one", "this", "them", "those"):
             return {"intent": "remove", "text": text, "remove_dish": d,
-                    "quantity": _quantity(t),
-                    "qty_explicit": bool(re.search(
-                        r"\b(\d+|one|two|three|four|five|a|an|single)\b", t))}
+                    "quantity": _quantity(t), "qty_explicit": qty_explicit}
 
     # Recommendation
     if has("recommend", "suggest", "special", "what should i", "what's good",

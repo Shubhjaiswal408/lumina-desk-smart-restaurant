@@ -18,18 +18,27 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _CLI = os.path.join(_HERE, "tools", "arduino-cli")
 _CFG = os.path.join(_HERE, "tools", "arduino-cli.yaml")
 
+# The port says which board it is; config.DISPLAY_TRANSPORT says how this
+# deployment talks to it. Both matter — flashing the WiFi firmware onto a panel
+# the Pi drives over USB would leave a screen that boots fine and never updates.
 BOARDS = {
     "/dev/ttyUSB0": {
         "name": "reTerminal E1002 (colour)",
-        "sketch": "firmware/display_wifi",
         "fqbn": "esp32:esp32:XIAO_ESP32S3:PSRAM=opi,CDCOnBoot=cdc",
+        "sketch": {"serial": "firmware/display", "wifi": "firmware/display_wifi"},
     },
     "/dev/ttyACM0": {
         "name": "XIAO ESP32-C3 (mono)",
-        "sketch": "firmware/display_mono",
         "fqbn": "esp32:esp32:XIAO_ESP32C3",
+        # No WiFi build for the mono panel; it is driven over USB either way.
+        "sketch": {"serial": "firmware/display_mono", "wifi": "firmware/display_mono"},
     },
 }
+
+
+def _sketch_for(board: dict) -> str:
+    import config
+    return board["sketch"].get(config.DISPLAY_TRANSPORT, board["sketch"]["serial"])
 
 # One flash at a time, and never two at once — an interrupted upload leaves a
 # panel that won't boot, which is a far worse afternoon than a stale screen.
@@ -47,9 +56,12 @@ def detect():
 
 def status() -> dict:
     port, board = detect()
+    import config
     return {
         "port": port,
         "board": board["name"] if board else None,
+        "sketch": _sketch_for(board) if board else None,
+        "transport": config.DISPLAY_TRANSPORT,
         "toolchain": os.path.exists(_CLI),
         "running": _state["running"],
         "ok": _state["ok"],
@@ -61,8 +73,10 @@ def status() -> dict:
 def _run(port: str, board: dict):
     _state.update(running=True, started=time.time(), log=[], ok=None,
                   board=board["name"])
+    sketch = _sketch_for(board)
+    _state["log"].append(f"flashing {sketch} -> {board['name']} on {port}")
     cmd = [_CLI, "--config-file", _CFG, "compile", "--upload", "-p", port,
-           "--fqbn", board["fqbn"], board["sketch"]]
+           "--fqbn", board["fqbn"], sketch]
     try:
         proc = subprocess.Popen(cmd, cwd=_HERE, stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT, text=True)
@@ -93,4 +107,5 @@ def start() -> dict:
         _lock.release()
         return {"ok": False, "error": "arduino-cli isn't installed on this Pi"}
     threading.Thread(target=_run, args=(port, board), daemon=True).start()
-    return {"ok": True, "board": board["name"], "port": port}
+    return {"ok": True, "board": board["name"], "port": port,
+            "sketch": _sketch_for(board)}

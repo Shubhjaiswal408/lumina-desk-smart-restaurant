@@ -196,6 +196,16 @@ for filler in ("Okay. Okay.", "Exactly.", "Thank you.", "Bye.", "you", ""):
 for real in ("one large margherita", "Yes.", "Okay, one margherita", "what is my bill"):
     check(not _stt._is_hallucination(real), f'"{real}" is heard as speech')
 
+print("\nRemoving without naming the dish")
+# "actually remove one" named nothing, so the rules gave up, the cloud was rate
+# limited and the local model timed out — twenty seconds to say "say that again".
+for phrase in ("actually remove one", "remove it", "take that off"):
+    _s = Session()
+    _s.add_dish(menu.find_dish("paneer momo"), 2, "Steam")
+    _s.last_dish = menu.find_dish("paneer momo")
+    dialog.handle(intents.parse_intent(phrase), _s)
+    check(sum(l["qty"] for l in _s.cart) < 2, f'"{phrase}" takes something off')
+
 print("\nSizes and labels")
 order("i want a paneer momo in gravy and one peri peri fries large",
       [("Paneer Momo (Gravy)", 1), ("Large Peri-Peri Fries", 1)])

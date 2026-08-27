@@ -116,11 +116,18 @@ class _Speaker:
         self._led_in = False           # has its lead-in been sent?
         self._spoken = 0               # bytes of THIS utterance handed to aplay
         self._started = 0.0            # when its first byte went out
+        self._retry_at = 0.0           # don't hammer a busy card
         threading.Thread(target=self._keep_awake, daemon=True).start()
 
     # --- device ---------------------------------------------------------
     def _ensure(self):
         if self.proc is None or self.proc.poll() is not None:
+            # Back off when the card is held by something else. Without this the
+            # keep-alive retries on every tick, and a busy device produces
+            # hundreds of failed players a second and a log you can't read.
+            if time.monotonic() < self._retry_at:
+                return
+            self._retry_at = time.monotonic() + 2.0
             self.proc = subprocess.Popen(
                 ["aplay", "-t", "raw", "-f", "S16_LE",
                  "-r", str(SPEAK_RATE), "-c", "1", "-D", config.PLAYBACK_DEVICE],
@@ -144,6 +151,8 @@ class _Speaker:
         like."""
         with self._write_lock:
             self._ensure()
+            if self.proc is None or self.proc.poll() is not None:
+                return                 # no device right now; drop it quietly
             # Schedule the finish time BEFORE writing. aplay consumes at real
             # time, so a big block blocks here for most of its own duration —
             # timing it afterwards made wait() think the audio was nearly done.
