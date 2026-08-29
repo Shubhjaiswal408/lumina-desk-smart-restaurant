@@ -146,13 +146,18 @@ class DisplayManager:
 
 
 def _detect_port():
-    """Pick the connected panel. ttyACM0 = XIAO C3 (mono, native USB, no reset);
-    ttyUSB0 = reTerminal E1002 (color, CH340, needs reset)."""
-    import os
-    if os.path.exists("/dev/ttyACM0"):
-        return "/dev/ttyACM0", False   # mono C3, don't reset (native USB)
-    if os.path.exists("/dev/ttyUSB0"):
-        return "/dev/ttyUSB0", True    # E1002, CH340 needs EN pulse
+    """Pick the connected panel, whatever number the kernel gave it.
+
+    ttyACM* is a XIAO C3 (mono, native USB, no auto-reset); ttyUSB* is the
+    reTerminal E1002 (colour, CH340, needs an EN pulse). Don't hardcode the
+    index — unplug and replug a cable and you get ttyUSB1, which used to leave
+    the service talking to a port that no longer exists.
+    """
+    import glob
+    for path in sorted(glob.glob("/dev/ttyACM*")):
+        return path, False
+    for path in sorted(glob.glob("/dev/ttyUSB*")):
+        return path, True
     return PORT, True
 
 

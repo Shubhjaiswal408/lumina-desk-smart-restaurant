@@ -47,10 +47,17 @@ _state = {"running": False, "started": 0.0, "log": [], "ok": None, "board": ""}
 
 
 def detect():
-    """Which panel is plugged in, if any."""
-    for port, board in BOARDS.items():
-        if os.path.exists(port):
-            return port, board
+    """Which panel is plugged in, if any — at whatever port number it landed on.
+
+    Replugging a cable moves it to ttyUSB1, so match on the family rather than
+    the exact path.
+    """
+    import glob
+    for pattern, key in (("/dev/ttyACM*", "/dev/ttyACM0"),
+                         ("/dev/ttyUSB*", "/dev/ttyUSB0")):
+        found = sorted(glob.glob(pattern))
+        if found:
+            return found[0], BOARDS[key]
     return None, None
 
 
