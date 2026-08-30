@@ -27,3 +27,6 @@ wifi_secrets.h
 docs/console-walkthrough.mp4
 docs/audio/
 docs/payments-demo.mp4
+docs/tutorial.mp4
+docs/_*
+docs/tutorial-narrated.mp4
