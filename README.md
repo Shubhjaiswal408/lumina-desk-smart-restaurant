@@ -428,12 +428,46 @@ the console adds dishes live.
 
 ## Step 10 — The table screen (optional)
 
+First you need `arduino-cli` — nothing else in this build uses it, so Step 2
+doesn't install it. Get it from
+[arduino.github.io/arduino-cli](https://arduino.github.io/arduino-cli/latest/installation/),
+put the binary on your `PATH`, then:
+
+```bash
+arduino-cli core install esp32:esp32
+```
+
+Put it at `tools/arduino-cli` (with `tools/arduino-cli.yaml` beside it) if you
+also want the **Flash panel** button in Settings to work — that's where
+`panel_flash.py` looks for it.
+
+### Over USB — start here
+
+`DISPLAY_TRANSPORT = "serial"` in `config.py`, which is what this build runs.
+The Pi drives the panel down the cable.
+
+```bash
+arduino-cli compile --upload -p /dev/ttyUSB0 \
+  --fqbn 'esp32:esp32:XIAO_ESP32S3:PSRAM=opi,CDCOnBoot=cdc' firmware/display
+```
+
+### Over WiFi — battery powered, no cable
+
+Set `DISPLAY_TRANSPORT = "wifi"` and flash the other sketch:
+
 ```bash
 cp firmware/display_wifi/wifi_secrets.h.example firmware/display_wifi/wifi_secrets.h
 # fill in your WiFi name/password and the Pi's hostname, then:
 arduino-cli compile --upload -p /dev/ttyUSB0 \
   --fqbn 'esp32:esp32:XIAO_ESP32S3:PSRAM=opi,CDCOnBoot=cdc' firmware/display_wifi
 ```
+
+> **This one needs a cooperative router.** The panel reaches the Pi's MQTT
+> broker directly, so anything that isolates clients from one another — guest
+> WiFi, most phone hotspots, some JioFi units — leaves you with a panel that
+> boots, connects, and never updates. If the screen goes stale, try the USB path
+> before you start debugging firmware. On the bench here, client isolation is
+> exactly what blocked it.
 
 Unplug the USB cable — it runs on battery over WiFi. It finds the Pi by **mDNS**
 every time it reconnects, and remembers the last working address in flash, so
