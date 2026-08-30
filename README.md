@@ -109,6 +109,18 @@ built around the ways they actually fail:
 - **Three physical buttons** — call a server, show the bill, mute. They work with the microphone closed.
 - **Mute means the microphone is off** — the device is released, the LED ring goes dark, and the panel says so rather than inviting you to talk to something that isn't listening.
 
+Every screen the guest ever sees, in order. These are the real renders — the
+same 800×480 images that get packed and pushed to the panel:
+
+| Nobody has ordered yet | The order, live | The kitchen is on it |
+|---|---|---|
+| ![Welcome screen: "Just say Hey Lumina"](docs/images/epaper-welcome.png) | ![Order screen with three lines and a running total](docs/images/epaper-order.png) | ![The same order marked preparing, with a ready-time](docs/images/epaper-preparing.png) |
+| **Time to pay** | **Paid** | **Microphone off** |
+| ![Payment screen with a UPI QR for the exact bill](docs/images/epaper-pay.png) | ![Thank-you screen](docs/images/epaper-thanks.png) | ![Screen reading "The microphone is switched off"](docs/images/epaper-muted.png) |
+
+There is no backlight and no glare, it holds the bill on screen with the power
+off, and it draws nothing at all between updates.
+
 ### Paying
 
 - **Dynamic UPI QR** — one VPA, the exact amount per bill, no payment gateway.
@@ -186,25 +198,22 @@ Changes apply within a second.
 
 ## How it works
 
-```
-   Guest speaks                 Raspberry Pi 5                      Staff
-  ┌───────────────┐     ┌────────────────────────────┐     ┌─────────────────┐
-  │ "Hey Lumina,  │────▶│  wake word → STT → LLM     │────▶│  Kitchen board  │
-  │  one large    │     │       ↓                    │     │  (any browser)  │
-  │  Margherita"  │     │  grounded in menu.py       │     └────────┬────────┘
-  └───────────────┘     │  MQTT bus (mosquitto)      │              │
-          ▲             └─────────────┬──────────────┘              │ "Ready"
-          │ spoken reply              │ frames over WiFi            │
-          │ (Indian-English TTS)      ▼                             ▼
-          └────────────────────  ePaper panel  ◀──────  status back to the table
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagram-architecture-dark.png">
+  <img alt="The table's mic, speaker and ePaper panel connect to a Raspberry Pi 5 running lumina-voice, mosquitto, lumina-display and lumina-kds. Staff use any browser on the same WiFi. The cloud is optional." src="docs/images/diagram-architecture.png">
+</picture>
 
 ### The pipeline, step by step
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagram-pipeline-dark.png">
+  <img alt="Six stages from wake word to spoken reply, with what each one costs in milliseconds" src="docs/images/diagram-pipeline.png">
+</picture>
 
 1. **Wake word** — openWakeWord runs a custom `hey_lumina.onnx` on-device. No cloud, no keyword service.
 2. **Capture** — a background thread constantly drains the mic so ALSA never overflows. An energy-based VAD records exactly one sentence and throws away noise.
 3. **Speech → text** — Groq Whisper (`whisper-large-v3-turbo`), primed with the live menu so dish names transcribe correctly. Vosk when offline.
-4. **Understanding** — the LLM gets the conversation, the cart and the real menu. Groq `llama-3.3-70b-versatile` online; LFM2-700M via Ollama offline.
+4. **Understanding** — the LLM gets the conversation, the cart and the real menu. Groq `openai/gpt-oss-20b` online; LFM2-700M via Ollama offline. Most turns never reach it: the rule parser in `intents.py` classifies orders, bills and allergen questions in under 5 ms.
 5. **Facts stay in code** — the model returns *intent*; `menu.py` and `session.py` compute money, time and allergens.
 6. **Reply** — an online neural voice speaks it: **Indian English**, Hindi or Gujarati, not American. Piper runs resident on the Pi as the fallback and the whole of offline mode. See [The voice](#the-voice).
 7. **Publish** — order and status go onto MQTT; the display service renders an 800×480 image with Pillow and streams it to the panel over WiFi.
@@ -248,6 +257,14 @@ Take it in order; each step ends with something you can check.
 You also need a free **[Groq API key](https://console.groq.com)** for the fast
 online mode. It costs nothing and takes a minute. (You can skip it and run fully
 offline — see [Online vs offline](#online-vs-offline).)
+
+Everything connects over USB. There is no soldering, no GPIO wiring and no
+level shifting anywhere in this build:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/diagram-wiring-dark.png">
+  <img alt="The reSpeaker mic plugs into a USB-A port and the speaker into the 3.5 mm jack. The reTerminal ePaper panel plugs into USB-C and appears as /dev/ttyUSB*. Your phone or laptop reaches the console at port 8000 over the same WiFi." src="docs/images/diagram-wiring.png">
+</picture>
 
 ## Step 1 — Get the code onto the Pi
 
@@ -476,6 +493,12 @@ accuracy when the line is up, local resilience when it isn't.
 
 `tools_bench.py` speaks test phrases through the real pipeline and times each
 stage. On a Pi 5, median, in `auto` mode:
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/chart-latency-dark.png">
+  <img alt="Stacked bars: a fact question answered with the offline voice takes 0.52 s; with the online voice 0.97 s. Ordering takes 1.01 s offline and 1.46 s online. Speech-to-text is a flat 264 ms; understanding is 5 ms via rules or 500 ms via the cloud." src="docs/images/chart-latency.png">
+</picture>
+
 
 | Stage | Fact questions | Ordering |
 |---|---|---|

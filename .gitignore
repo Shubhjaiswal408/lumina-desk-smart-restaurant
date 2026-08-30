@@ -22,3 +22,7 @@ vosk-model-en-us-0.22/
 vosk-model-small-en-us-0.15/
 vosk-model.zip
 wifi_secrets.h
+
+# Demo captures — regenerate with tools_record.py, do not commit
+docs/console-walkthrough.mp4
+docs/audio/
