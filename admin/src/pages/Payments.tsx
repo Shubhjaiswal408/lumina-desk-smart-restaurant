@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { getPay, getPayments, getToken, useKitchen, type PayInfo, type Payment } from "@/lib/api"
+import { getPay, getPayments, getToken, post, useKitchen, type PayInfo, type Payment } from "@/lib/api"
 
 const when = (ts: number | null) =>
   ts ? new Date(ts * 1000).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }) : "—"
@@ -171,11 +171,20 @@ export default function Payments() {
                 <TableCell className="text-right">
                   {p.status === "pending" && (
                     <Button size="sm" variant="secondary" onClick={async () => {
-                      await fetch(`/api/payments/${p.ref}/mark`, {
-                        method: "POST", headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ paid: true }),
-                      })
-                      toast.success("Marked paid"); loadRows()
+                      // This used a bare fetch(), which sent no staff token, so
+                      // the server answered 401 — and the toast fired anyway.
+                      // The bill stayed pending while the screen said it was
+                      // settled, which is the worst way for this to fail.
+                      try {
+                        const r = await post(`/api/payments/${p.ref}/mark`, { paid: true })
+                        if (r?.error) throw new Error(r.error)
+                        // Name the table: staff clear one bill while three
+                        // others sit pending, and "Marked paid" doesn't say which.
+                        toast.success(`Payment confirmed · Table ${p.tbl}`)
+                      } catch {
+                        toast.error("Could not mark it paid — try again")
+                      }
+                      loadRows()
                     }}>Mark paid</Button>
                   )}
                 </TableCell>
